@@ -60,7 +60,6 @@ class SharkBenchmarkRunner(SharkRunner):
     def __init__(
         self,
         mlir_module: bytes,
-        function_name: str = "forward",
         device: str = "none",
         mlir_dialect: str = "linalg",
         extra_args: list = [],
@@ -73,7 +72,6 @@ class SharkBenchmarkRunner(SharkRunner):
         SharkRunner.__init__(
             self,
             mlir_module,
-            function_name,
             device,
             self.mlir_dialect,
             self.extra_args,
@@ -85,7 +83,6 @@ class SharkBenchmarkRunner(SharkRunner):
                 device,
                 shark_args.repro_dir,
                 self.mlir_dialect,
-                function_name,
                 extra_args=self.extra_args,
             )
 
