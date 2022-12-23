@@ -14,6 +14,7 @@
 
 from shark.iree_utils.compile_utils import (
     get_iree_compiled_module,
+    get_iree_accessors_compiled,
     get_results,
     export_iree_module_to_vmfb,
     load_flatbuffer,
@@ -64,6 +65,7 @@ class SharkRunner:
         mlir_dialect: str = "linalg",
         extra_args: list = [],
         compile_vmfb: bool = True,
+        compile_accessors: bool = True
     ):
         self.mlir_module = mlir_module
         self.device = shark_args.device if device == "none" else device
@@ -73,6 +75,9 @@ class SharkRunner:
         if check_device_drivers(self.device):
             print(device_driver_info(self.device))
             sys.exit(1)
+
+        if compile_accessors:
+            self.mlir_module = get_iree_accessors_compiled(self.mlir_module)
 
         if compile_vmfb == True:
             # Compile the module to get the .vmfb.

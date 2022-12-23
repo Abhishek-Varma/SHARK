@@ -13,6 +13,7 @@
 # limitations under the License.
 import iree.runtime as ireert
 import iree.compiler as ireec
+from iree.compiler.tools import binaries
 from shark.iree_utils._common import iree_device_map, iree_target_map
 from shark.iree_utils.benchmark_utils import *
 from shark.parser import shark_args
@@ -382,3 +383,14 @@ def get_iree_runtime_config(device):
     device = iree_device_map(device)
     config = ireert.Config(device=ireert.get_device(device))
     return config
+
+def get_iree_accessors_compiled(module):
+    iree_compile = binaries.find_tool("iree-opt")
+    cl = [iree_compile,
+          module,
+          "--iree-import-ml-program"]
+    result = binaries.invoke_immediate(cl).decode("utf-8")
+    print("FROM get_iree_accessors_compiled (SHARK)")
+    print(result)
+    print("<><><><><><><>")
+    return result
