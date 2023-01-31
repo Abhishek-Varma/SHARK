@@ -23,7 +23,7 @@ p.add_argument(
 )
 
 p.add_argument(
-    "--negative_prompts",
+    "--negative-prompts",
     nargs="+",
     default=[""],
     help="text you don't want to see in the generated image.",
@@ -311,6 +311,13 @@ p.add_argument(
     type=str,
     default="unet",
     help="Options are unet and vae.",
+)
+
+p.add_argument(
+    "--use_winograd",
+    default=False,
+    action=argparse.BooleanOptionalAction,
+    help="Apply Winograd on selected conv ops.",
 )
 
 args = p.parse_args()
