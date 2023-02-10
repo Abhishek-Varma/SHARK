@@ -20,20 +20,23 @@ from diffusers.pipelines.stable_diffusion.convert_from_ckpt import (
 )
 
 
-def get_vmfb_path_name(model_name):
+def get_extended_name(model_name):
     device = (
         args.device
         if "://" not in args.device
         else "-".join(args.device.split("://"))
     )
     extended_name = "{}_{}".format(model_name, device)
-    vmfb_path = os.path.join(os.getcwd(), extended_name + ".vmfb")
-    return [vmfb_path, extended_name]
+    return extended_name
+
+def get_vmfb_path_name(model_name):
+    vmfb_path = os.path.join(os.getcwd(), model_name + ".vmfb")
+    return vmfb_path
 
 
 def _compile_module(shark_module, model_name, extra_args=[]):
     if args.load_vmfb or args.save_vmfb:
-        [vmfb_path, extended_name] = get_vmfb_path_name(model_name)
+        vmfb_path = get_vmfb_path_name(model_name)
         if args.load_vmfb and os.path.isfile(vmfb_path) and not args.save_vmfb:
             print(f"loading existing vmfb from: {vmfb_path}")
             shark_module.load_module(vmfb_path, extra_args=extra_args)
@@ -47,7 +50,7 @@ def _compile_module(shark_module, model_name, extra_args=[]):
                     )
                 )
             path = shark_module.save_module(
-                os.getcwd(), extended_name, extra_args
+                os.getcwd(), model_name, extra_args
             )
             shark_module.load_module(path, extra_args=extra_args)
     else:
@@ -353,7 +356,10 @@ def get_opt_flags(model, precision="fp16"):
         ][device]
     return iree_flags
 
-
+def get_path_stem(path):
+    path = Path(path)
+    return path.stem
+    
 def get_path_to_diffusers_checkpoint(custom_weights):
     path = Path(custom_weights)
     diffusers_path = path.parent.absolute()
@@ -405,11 +411,8 @@ def load_vmfb(vmfb_path, model, precision):
 
 # This utility returns vmfbs of Clip, Unet and Vae, in case all three of them
 # are present; deletes them otherwise.
-def fetch_or_delete_vmfbs(basic_model_name, use_base_vae, precision="fp32"):
-    model_name = ["clip", "unet", "base_vae" if use_base_vae else "vae"]
-    vmfb_path = [
-        get_vmfb_path_name(model + basic_model_name)[0] for model in model_name
-    ]
+def fetch_or_delete_vmfbs(extended_model_name, precision="fp32"):
+    vmfb_path = [get_vmfb_path_name(extended_model_name[model]) for model in extended_model_name]
     vmfb_present = [os.path.isfile(vmfb) for vmfb in vmfb_path]
     all_vmfb_present = functools.reduce(operator.__and__, vmfb_present)
     compiled_models = [None] * 3
@@ -422,7 +425,7 @@ def fetch_or_delete_vmfbs(basic_model_name, use_base_vae, precision="fp32"):
     else:
         for i in range(len(vmfb_path)):
             compiled_models[i] = load_vmfb(
-                vmfb_path[i], model_name[i], precision
+                vmfb_path[i], extended_model_name[i], precision
             )
     return compiled_models
 
