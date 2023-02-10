@@ -369,6 +369,22 @@ def get_path_to_diffusers_checkpoint(custom_weights):
     path_to_diffusers = complete_path_to_diffusers.as_posix()
     return path_to_diffusers
 
+def remove_folder(folder):
+    folder = Path(folder)
+    for item in folder.iterdir():
+        if item.is_dir():
+            remove_folder(item)
+        else:
+            item.unlink()
+    folder.rmdir()
+
+def trim_down_checkpoint(diffusers_checkpoint):
+    diffusers_checkpoint = Path(diffusers_checkpoint)
+    for item in diffusers_checkpoint.iterdir():
+        if item.is_dir() and item.stem not in ["unet", "vae", "text_encoder"]:
+            remove_folder(item)
+        elif item.is_file():
+            item.unlink()
 
 def preprocessCKPT(custom_weights):
     path_to_diffusers = get_path_to_diffusers_checkpoint(custom_weights)
@@ -397,6 +413,7 @@ def preprocessCKPT(custom_weights):
         from_safetensors=from_safetensors,
     )
     pipe.save_pretrained(path_to_diffusers)
+    trim_down_checkpoint(path_to_diffusers)
     print("Loading complete")
 
 

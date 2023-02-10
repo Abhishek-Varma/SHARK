@@ -134,10 +134,18 @@ class SharkifyStableDiffusionModel:
         class VaeModel(torch.nn.Module):
             def __init__(self, model_id=self.model_id, base_vae=self.base_vae, custom_vae=self.custom_vae):
                 super().__init__()
-                self.vae = AutoencoderKL.from_pretrained(
-                    model_id if custom_vae == "" else custom_vae,
-                    subfolder="vae",
-                )
+                self.vae = None
+                # In general, `model_id` or `custom_vae` can be the diffusers' SD model.
+                # But a few HuggingFace repo-id provide only Vae.
+                try:
+                    self.vae = AutoencoderKL.from_pretrained(
+                        model_id if custom_vae == "" else custom_vae,
+                        subfolder="vae",
+                    )
+                except:
+                    self.vae = AutoencoderKL.from_pretrained(
+                        model_id if custom_vae == "" else custom_vae
+                    )
                 self.base_vae = base_vae
 
             def forward(self, input):
@@ -272,7 +280,7 @@ class SharkifyStableDiffusionModel:
         # For custom Vae user can provide either the repo-id or a checkpoint file,
         # and for a checkpoint file we'd need to process it via Diffusers' script.
         if self.custom_vae.lower().endswith((".ckpt", ".safetensors")):
-            preprocessCKPT(self.custom_vae)
+            preprocessCKPT(self.custom_vae, ["vae"])
             self.custom_vae = get_path_to_diffusers_checkpoint(self.custom_vae)
         base_model_fetched = fetch_and_update_base_model_id(model_to_run)
         if base_model_fetched != "":
