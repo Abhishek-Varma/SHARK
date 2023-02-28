@@ -22,10 +22,10 @@ from apps.stable_diffusion.src.pipelines.pipeline_shark_stable_diffusion_utils i
 from apps.stable_diffusion.src.utils import controlnet_hint_conversion
 
 
-class Image2ImagePipeline(StableDiffusionPipeline):
+class StencilPipeline(StableDiffusionPipeline):
     def __init__(
         self,
-        vae_encode: SharkInference,
+        controlnet: SharkInference,
         vae: SharkInference,
         text_encoder: SharkInference,
         tokenizer: CLIPTokenizer,
@@ -41,7 +41,13 @@ class Image2ImagePipeline(StableDiffusionPipeline):
         ],
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler)
-        self.vae_encode = vae_encode
+        # TODO: Make this dynamic like other models which'll be passed to StableDiffusionPipeline.
+        from diffusers import ControlNetModel
+
+        self.controlnet = ControlNetModel.from_pretrained(
+            "takuma104/control_sd15_canny", subfolder="controlnet"
+        )
+        # self.controlnet = controlnet
 
     def prepare_latents(
         self,
@@ -68,58 +74,6 @@ class Image2ImagePipeline(StableDiffusionPipeline):
         latents = latents * self.scheduler.init_noise_sigma
         return latents
 
-    def prepare_image_latents(
-        self,
-        image,
-        batch_size,
-        height,
-        width,
-        generator,
-        num_inference_steps,
-        strength,
-        dtype,
-    ):
-        # Pre process image -> get image encoded -> process latents
-
-        # TODO: process with variable HxW combos
-
-        # Pre process image
-        image = image.resize((width, height))
-        image_arr = np.stack([np.array(i) for i in (image,)], axis=0)
-        image_arr = image_arr / 255.0
-        image_arr = torch.from_numpy(image_arr).permute(0, 3, 1, 2).to(dtype)
-        image_arr = 2 * (image_arr - 0.5)
-
-        # set scheduler steps
-        self.scheduler.set_timesteps(num_inference_steps)
-        init_timestep = min(
-            int(num_inference_steps * strength), num_inference_steps
-        )
-        t_start = max(num_inference_steps - init_timestep, 0)
-        # timesteps reduced as per strength
-        timesteps = self.scheduler.timesteps[t_start:]
-        # new number of steps to be used as per strength will be
-        # num_inference_steps = num_inference_steps - t_start
-
-        # image encode
-        latents = self.encode_image((image_arr,))
-        latents = torch.from_numpy(latents).to(dtype)
-        # add noise to data
-        noise = torch.randn(latents.shape, generator=generator, dtype=dtype)
-        latents = self.scheduler.add_noise(
-            latents, noise, timesteps[0].repeat(1)
-        )
-
-        return latents, timesteps
-
-    def encode_image(self, input_image):
-        vae_encode_start = time.time()
-        latents = self.vae_encode("forward", input_image)
-        vae_inf_time = (time.time() - vae_encode_start) * 1000
-        self.log += f"\nVAE Encode Inference time (ms): {vae_inf_time:.3f}"
-
-        return latents
-
     def generate_images(
         self,
         prompts,
@@ -138,6 +92,11 @@ class Image2ImagePipeline(StableDiffusionPipeline):
         cpu_scheduling,
         use_stencil,
     ):
+        # Control Embedding check & conversion
+        # TODO: 1. Change `num_images_per_prompt`.
+        controlnet_hint = controlnet_hint_conversion(
+            image, use_stencil, height, width, num_images_per_prompt=1
+        )
         # prompts and negative prompts must be a list.
         if isinstance(prompts, str):
             prompts = [prompts]
@@ -162,25 +121,26 @@ class Image2ImagePipeline(StableDiffusionPipeline):
         guidance_scale = torch.tensor(guidance_scale).to(torch.float32)
 
         # Prepare initial latent.
-        init_latents, final_timesteps = self.prepare_image_latents(
-            image=image,
+        init_latents = self.prepare_latents(
             batch_size=batch_size,
             height=height,
             width=width,
             generator=generator,
             num_inference_steps=num_inference_steps,
-            strength=strength,
             dtype=dtype,
         )
-
+        final_timesteps = self.scheduler.timesteps
+        
         # Get Image latents
-        latents = self.produce_img_latents(
+        latents = self.produce_stencil_latents(
             latents=init_latents,
             text_embeddings=text_embeddings,
             guidance_scale=guidance_scale,
             total_timesteps=final_timesteps,
             dtype=dtype,
             cpu_scheduling=cpu_scheduling,
+            controlnet_hint=controlnet_hint,
+            controlnet=self.controlnet,
         )
 
         # Img latents -> PIL images

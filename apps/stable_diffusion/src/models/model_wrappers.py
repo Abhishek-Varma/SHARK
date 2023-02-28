@@ -1,4 +1,4 @@
-from diffusers import AutoencoderKL, UNet2DConditionModel
+from diffusers import AutoencoderKL, UNet2DConditionModel, ControlNetModel
 from transformers import CLIPTextModel
 from collections import defaultdict
 import torch
@@ -119,7 +119,7 @@ class SharkifyStableDiffusionModel:
 
     def get_extended_name_for_all_model(self):
         model_name = {}
-        sub_model_list = ["clip", "unet", "vae", "vae_encode"]
+        sub_model_list = ["clip", "unet", "vae", "vae_encode", "controlnet", "controlled_unet"]
         for model in sub_model_list:
             sub_model = model
             model_config = self.model_name
@@ -215,6 +215,109 @@ class SharkifyStableDiffusionModel:
         )
         return shark_vae
 
+    def get_controlled_unet(self):
+        class ControlledUnetModel(torch.nn.Module):
+            def __init__(
+                self, model_id=self.model_id, low_cpu_mem_usage=False
+            ):
+                super().__init__()
+                self.unet = UNet2DConditionModel.from_pretrained(
+                    "takuma104/control_sd15_canny",  # TODO: ADD with model ID
+                    subfolder="unet",
+                    low_cpu_mem_usage=low_cpu_mem_usage,
+                )
+                self.in_channels = self.unet.in_channels
+                self.train(False)
+
+            def forward( self, latent, timestep, text_embedding, guidance_scale, control1,
+                         control2, control3, control4, control5, control6, control7,
+                         control8, control9, control10, control11, control12, control13,
+            ):
+                # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
+                db_res_samples = tuple([ control1, control2, control3, control4, control5, control6, control7, control8, control9, control10, control11, control12,])
+                mb_res_samples = control13
+                latents = torch.cat([latent] * 2)
+                unet_out = self.unet.forward(
+                    latents,
+                    timestep,
+                    encoder_hidden_states=text_embedding,
+                    down_block_additional_residuals=db_res_samples,
+                    mid_block_additional_residual=mb_res_samples,
+                    return_dict=False,
+                )[0]
+                noise_pred_uncond, noise_pred_text = unet_out.chunk(2)
+                noise_pred = noise_pred_uncond + guidance_scale * (
+                    noise_pred_text - noise_pred_uncond
+                )
+                return noise_pred
+
+        unet = ControlledUnetModel(low_cpu_mem_usage=self.low_cpu_mem_usage)
+        is_f16 = True if self.precision == "fp16" else False
+
+        inputs = tuple(self.inputs["controlled_unet"])
+        input_mask = [True, True, True, False, True, True, True, True, True, True, True, True, True, True, True, True, True,]
+        shark_controlled_unet = compile_through_fx(
+            unet,
+            inputs,
+            model_name=self.model_name["controlled_unet"],
+            is_f16=is_f16,
+            f16_input_mask=input_mask,
+            use_tuned=self.use_tuned,
+            extra_args=get_opt_flags("unet", precision=self.precision),
+        )
+        return shark_controlled_unet
+
+    def get_control_net(self):
+        class StencilControlNetModel(torch.nn.Module):
+            def __init__(
+                self, model_id=self.model_id, low_cpu_mem_usage=False
+            ):
+                super().__init__()
+                self.cnet = ControlNetModel.from_pretrained(
+                    "takuma104/control_sd15_canny", # TODO: ADD with model ID
+                    subfolder="controlnet",
+                    low_cpu_mem_usage=low_cpu_mem_usage,
+                )
+                self.in_channels = self.cnet.in_channels
+                self.train(False)
+
+            def forward(
+                self,
+                latent,
+                timestep,
+                text_embedding,
+                stencil_image,
+            ):
+                # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
+                # TODO: guidance NOT NEEDED change in `get_input_info` later
+                latents = torch.cat(
+                    [latent] * 2
+                )  # needs to be same as controlledUNET latents
+                down_block_res_samples, mid_block_res_sample = self.cnet.forward(
+                    latents,
+                    timestep,
+                    encoder_hidden_states=text_embedding,
+                    controlnet_cond=stencil_image,
+                    return_dict=False,
+                )
+                return tuple(list(down_block_res_samples) + [mid_block_res_sample])
+
+        scnet = StencilControlNetModel(low_cpu_mem_usage=self.low_cpu_mem_usage)
+        is_f16 = True if self.precision == "fp16" else False
+
+        inputs = tuple(self.inputs["controlnet"])
+        input_mask = [True, True, True, True]
+        shark_cnet = compile_through_fx(
+            scnet,
+            inputs,
+            model_name=self.model_name["controlnet"],
+            is_f16=is_f16,
+            f16_input_mask=input_mask,
+            use_tuned=self.use_tuned,
+            extra_args=get_opt_flags("unet", precision=self.precision),
+        )
+        return shark_cnet
+
     def get_unet(self):
         class UnetModel(torch.nn.Module):
             def __init__(self, model_id=self.model_id, low_cpu_mem_usage=False):
@@ -230,14 +333,11 @@ class SharkifyStableDiffusionModel:
             # TODO: Instead of flattening the `control` try to use the list.
             def forward(
                 self, latent, timestep, text_embedding, guidance_scale,
-                control1, control2, control3, control4, control5, control6, control7,
-                control8, control9, control10, control11, control12, control13
             ):
-                control = [control1, control2, control3, control4, control5, control6, control7, control8, control9, control10, control11, control12, control13]
                 # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
                 latents = torch.cat([latent] * 2)
                 unet_out = self.unet.forward(
-                    latents, timestep, text_embedding, control=control, return_dict=False
+                    latents, timestep, text_embedding, return_dict=False
                 )[0]
                 noise_pred_uncond, noise_pred_text = unet_out.chunk(2)
                 noise_pred = noise_pred_uncond + guidance_scale * (
@@ -305,7 +405,7 @@ class SharkifyStableDiffusionModel:
             
     # Compiles Clip, Unet and Vae with `base_model_id` as defining their input
     # configiration.
-    def compile_all(self, base_model_id, need_vae_encode):
+    def compile_all(self, base_model_id, need_vae_encode, need_stencil):
         self.inputs = get_input_info(
             base_models[base_model_id],
             self.max_len,
@@ -313,11 +413,21 @@ class SharkifyStableDiffusionModel:
             self.height,
             self.batch_size,
         )
-        compiled_unet = self.get_unet()
+        compiled_controlnet = None
+        compiled_controlled_unet = None
+        compiled_unet = None
+        if need_stencil:
+            compiled_controlnet = self.get_control_net()
+            compiled_controlled_unet = self.get_controlled_unet()
+        else:
+            compiled_unet = self.get_unet()
         if self.custom_vae != "":
             print("Plugging in custom Vae")
         compiled_vae = self.get_vae()
         compiled_clip = self.get_clip()
+
+        if need_stencil:
+            return compiled_clip, compiled_controlled_unet, compiled_vae, compiled_controlnet
         if need_vae_encode:
             compiled_vae_encode = self.get_vae_encode()
             return compiled_clip, compiled_unet, compiled_vae, compiled_vae_encode
@@ -327,7 +437,12 @@ class SharkifyStableDiffusionModel:
     def __call__(self):
         # Step 1:
         # --  Fetch all vmfbs for the model, if present, else delete the lot.
-        need_vae_encode = args.img_path is not None
+        need_vae_encode, need_stencil = False, False
+        if args.img_path is not None:
+            if args.use_stencil is not None:
+                need_stencil = True
+            else:
+                need_vae_encode = True
         self.model_name = self.get_extended_name_for_all_model()
         vmfbs = fetch_or_delete_vmfbs(self.model_name, need_vae_encode, self.precision)   
         if vmfbs[0]:
@@ -362,7 +477,7 @@ class SharkifyStableDiffusionModel:
             print("Compiling all the models with the fetched base model configuration.")
             if args.ckpt_loc != "":
                 args.hf_model_id = base_model_fetched
-            return self.compile_all(base_model_fetched, need_vae_encode)
+            return self.compile_all(base_model_fetched, need_vae_encode, need_stencil)
 
         # Step 3:
         # -- This is the retry mechanism where the base model's configuration is not
@@ -371,9 +486,11 @@ class SharkifyStableDiffusionModel:
         for model_id in base_models:
             try:
                 if need_vae_encode:
-                    compiled_clip, compiled_unet, compiled_vae, compiled_vae_encode = self.compile_all(model_id, need_vae_encode)
+                    compiled_clip, compiled_unet, compiled_vae, compiled_vae_encode = self.compile_all(model_id, need_vae_encode, need_stencil)
+                elif need_stencil:
+                    compiled_clip, compiled_unet, compiled_vae, compiled_controlnet = self.compile_all(model_id, need_vae_encode, need_stencil)
                 else:
-                    compiled_clip, compiled_unet, compiled_vae = self.compile_all(model_id, need_vae_encode)
+                    compiled_clip, compiled_unet, compiled_vae = self.compile_all(model_id, need_vae_encode, need_stencil)
             except Exception as e:
                 print("Retrying with a different base model configuration")
                 continue
@@ -392,6 +509,13 @@ class SharkifyStableDiffusionModel:
                     compiled_unet,
                     compiled_vae,
                     compiled_vae_encode,
+                )
+            if need_stencil:
+                return (
+                    compiled_clip,
+                    compiled_unet,
+                    compiled_vae,
+                    compiled_controlnet,
                 )
             return compiled_clip, compiled_unet, compiled_vae
         sys.exit(

@@ -7,3 +7,6 @@ from apps.stable_diffusion.src.pipelines.pipeline_shark_stable_diffusion_inpaint
 from apps.stable_diffusion.src.pipelines.pipeline_shark_stable_diffusion_img2img import (
     Image2ImagePipeline,
 )
+from apps.stable_diffusion.src.pipelines.pipeline_shark_stable_diffusion_stencil import (
+    StencilPipeline,
+)
