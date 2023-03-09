@@ -2,7 +2,10 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
-from apps.stable_diffusion.src.utils.stencils.canny import CannyDetector
+from apps.stable_diffusion.src.utils.stencils import (
+    CannyDetector,
+    OpenposeDetector,
+)
 
 stencil = {}
 
@@ -80,7 +83,7 @@ def controlnet_hint_shaping(
         if controlnet_hint.shape in [shape_hwc, shape_bhwc, shape_nhwc]:
             controlnet_hint = torch.from_numpy(controlnet_hint.copy())
             controlnet_hint = controlnet_hint.to(
-                dtype=dtype, device=torch.device("cpu")
+                dtype=torch.half, device=torch.device("cpu")
             )
             controlnet_hint /= 255.0
             if controlnet_hint.shape != shape_nhwc:
@@ -121,20 +124,49 @@ def controlnet_hint_shaping(
 def controlnet_hint_conversion(
     image, use_stencil, height, width, dtype, num_images_per_prompt=1
 ):
-    controlnet_hint = None
+    # controlnet_hint = controlnet_hint_shaping(
+    #     image, height, width, dtype, num_images_per_prompt
+    # )
     match use_stencil:
         case "canny":
             print("Detecting edge with canny")
             controlnet_hint = hint_canny(image, width)
+        case "openpose":
+            print("Detecting human pose")
+            controlnet_hint = hint_openpose(image, width)
         case _:
             return None
     controlnet_hint = controlnet_hint_shaping(
-        controlnet_hint, height, width, dtype, num_images_per_prompt
+        image, height, width, dtype, num_images_per_prompt
     )
+    # controlnet_hint = torch.from_numpy(controlnet_hint.copy())
+    # controlnet_hint = controlnet_hint.to(
+    #             dtype=dtype, device=torch.device("cpu")
+    #         )
+    # controlnet_hint /= 255.0
+    # controlnet_hint = controlnet_hint.permute(
+    #             0, 3, 1, 2
+    #         )  # b h w c -> b c h w
     return controlnet_hint
 
+stencil_to_model_id_map = {
+    "canny": "lllyasviel/sd-controlnet-canny",
+    "depth": "lllyasviel/sd-controlnet-depth",
+    "hed": "lllyasviel/sd-controlnet-hed",
+    "mlsd": "lllyasviel/sd-controlnet-mlsd",
+    "normal": "lllyasviel/sd-controlnet-normal",
+    "openpose": "lllyasviel/sd-controlnet-openpose",
+    "scribble": "lllyasviel/sd-controlnet-scribble",
+    "seg": "lllyasviel/sd-controlnet-seg",
+}
 
-# Stencil 1. Canny
+def get_stencil_model_id(use_stencil):
+    if use_stencil in stencil_to_model_id_map:
+        print("Returning ModelID: ", str(stencil_to_model_id_map[use_stencil]))
+        return stencil_to_model_id_map[use_stencil]
+    return None
+
+# Stencil 1. Canny.
 def hint_canny(
     image: Image.Image,
     width=512,
@@ -153,3 +185,28 @@ def hint_canny(
         detected_map = stencil["canny"](img, low_threshold, high_threshold)
         detected_map = HWC3(detected_map)
         return detected_map
+
+# Stencil 2. OpenPose.
+def hint_openpose(
+    image: Image.Image,
+    width=512,
+    height=512,
+    detect_resolution=512,
+):
+    with torch.no_grad():
+        input_image = np.array(image)
+        image_resolution = width
+
+        input_image = HWC3(input_image)
+
+        if not "openpose" in stencil:
+            stencil["openpose"] = OpenposeDetector()
+
+        detected_map, _ = stencil["openpose"](
+            resize_image(input_image, detect_resolution))
+        detected_map = HWC3(detected_map)
+        img = resize_image(input_image, image_resolution)
+        H, W, C = img.shape
+        detected_map = cv2.resize(
+            detected_map, (W, H), interpolation=cv2.INTER_LINEAR)
+        return Image.fromarray(detected_map)

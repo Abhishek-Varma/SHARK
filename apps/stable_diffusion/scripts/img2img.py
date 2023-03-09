@@ -228,6 +228,17 @@ def img2img_inf(
     return generated_imgs, text_output
 
 
+def resize_stencil(image: Image.Image):
+    width, height = image.size
+    if width < 384 or height < 384:
+        sys.exit("width and height should at least be 384")
+    n_width = width // 8
+    n_height = height // 8
+    n_width *= 8
+    n_height *= 8
+    new_image = image.resize((n_width, n_height))
+    return new_image, n_width, n_height
+
 if __name__ == "__main__":
     if args.clear_all:
         clear_all()
@@ -235,7 +246,8 @@ if __name__ == "__main__":
     if args.img_path is None:
         print("Flag --img_path is required.")
         exit()
-
+    
+    image = Image.open(args.img_path).convert("RGB")
     # When the models get uploaded, it should be default to False.
     args.import_mlir = True
 
@@ -243,6 +255,9 @@ if __name__ == "__main__":
     if use_stencil:
         args.scheduler = "DDIM"
         args.hf_model_id = "runwayml/stable-diffusion-v1-5"
+        import pdb
+        pdb.set_trace()
+        image, args.width, args.height = resize_stencil(image)
     elif args.scheduler != "PNDM":
         if "Shark" in args.scheduler:
             print(
@@ -259,7 +274,6 @@ if __name__ == "__main__":
     schedulers = get_schedulers(args.hf_model_id)
 
     scheduler_obj = schedulers[args.scheduler]
-    image = Image.open(args.img_path).convert("RGB")
     seed = utils.sanitize_seed(args.seed)
     # Adjust for height and width based on model
 

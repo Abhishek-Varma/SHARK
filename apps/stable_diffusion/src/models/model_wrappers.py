@@ -16,6 +16,7 @@ from apps.stable_diffusion.src.utils import (
     fetch_and_update_base_model_id,
     get_path_stem,
     get_extended_name,
+    get_stencil_model_id,
 )
 
 
@@ -30,13 +31,23 @@ def replace_shape_str(shape, max_len, width, height, batch_size):
         elif shape[i] == "width":
             new_shape.append(width)
         elif isinstance(shape[i], str):
-            mul_val = int(shape[i].split("*")[0])
-            if "batch_size" in shape[i]:
-                new_shape.append(batch_size * mul_val)
-            elif "height" in shape[i]:
-                new_shape.append(height * mul_val)
-            elif "width" in shape[i]:
-                new_shape.append(width * mul_val)
+            if "*" in shape[i]:
+                mul_val = int(shape[i].split("*")[0])
+                if "batch_size" in shape[i]:
+                    new_shape.append(batch_size * mul_val)
+                elif "height" in shape[i]:
+                    new_shape.append(height * mul_val)
+                elif "width" in shape[i]:
+                    new_shape.append(width * mul_val)
+            elif "/" in shape[i]:
+                import math
+                div_val = int(shape[i].split("/")[1])
+                if "batch_size" in shape[i]:
+                    new_shape.append(math.ceil(batch_size / div_val))
+                elif "height" in shape[i]:
+                    new_shape.append(math.ceil(height / div_val))
+                elif "width" in shape[i]:
+                    new_shape.append(math.ceil(width / div_val))
         else:
             new_shape.append(shape[i])
     return new_shape
@@ -81,7 +92,8 @@ class SharkifyStableDiffusionModel:
         use_base_vae: bool = False,
         use_tuned: bool = False,
         low_cpu_mem_usage: bool = False,
-        is_inpaint: bool = False
+        is_inpaint: bool = False,
+        use_stencil: str = None
     ):
         self.check_params(max_len, width, height)
         self.max_len = max_len
@@ -118,6 +130,7 @@ class SharkifyStableDiffusionModel:
         self.model_name = self.model_name + "_" + get_path_stem(self.model_id)
         self.low_cpu_mem_usage = low_cpu_mem_usage
         self.is_inpaint = is_inpaint
+        self.use_stencil = get_stencil_model_id(use_stencil)
 
     def get_extended_name_for_all_model(self, mask_to_fetch):
         model_name = {}
@@ -142,6 +155,7 @@ class SharkifyStableDiffusionModel:
         if not (max_len >= 32 and max_len <= 77):
             sys.exit("please specify max_len in the range [32, 77].")
         if not (width % 8 == 0 and width >= 384):
+            print("Got width = ", str(width))
             sys.exit("width should be greater than 384 and multiple of 8")
         if not (height % 8 == 0 and height >= 384):
             sys.exit("height should be greater than 384 and multiple of 8")
@@ -229,7 +243,7 @@ class SharkifyStableDiffusionModel:
             ):
                 super().__init__()
                 self.unet = UNet2DConditionModel.from_pretrained(
-                    "takuma104/control_sd15_canny",  # TODO: ADD with model ID
+                    model_id,
                     subfolder="unet",
                     low_cpu_mem_usage=low_cpu_mem_usage,
                 )
@@ -277,12 +291,11 @@ class SharkifyStableDiffusionModel:
     def get_control_net(self):
         class StencilControlNetModel(torch.nn.Module):
             def __init__(
-                self, model_id=self.model_id, low_cpu_mem_usage=False
+                self, model_id=self.use_stencil, low_cpu_mem_usage=False
             ):
                 super().__init__()
                 self.cnet = ControlNetModel.from_pretrained(
-                    "takuma104/control_sd15_canny", # TODO: ADD with model ID
-                    subfolder="controlnet",
+                    model_id,
                     low_cpu_mem_usage=low_cpu_mem_usage,
                 )
                 self.in_channels = self.cnet.in_channels
@@ -454,7 +467,7 @@ class SharkifyStableDiffusionModel:
         # --  Fetch all vmfbs for the model, if present, else delete the lot.
         need_vae_encode, need_stencil = False, False
         if args.img_path is not None:
-            if args.use_stencil is not None:
+            if self.use_stencil is not None:
                 need_stencil = True
             else:
                 need_vae_encode = True
