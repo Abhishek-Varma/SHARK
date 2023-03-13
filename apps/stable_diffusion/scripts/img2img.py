@@ -42,12 +42,22 @@ init_import_mlir = args.import_mlir
 # For stencil, the input image can be of any size but we need to ensure that
 # it conforms with our model contraints :-
 #   Both width and height should be > 384 and multiple of 8.
-# This utility function performs the transformation on the input image before
-# sending it to the stencil pipeline.
+# This utility function performs the transformation on the input image while
+# also maintaining the aspect ratio before sending it to the stencil pipeline.
 def resize_stencil(image: Image.Image):
     width, height = image.size
-    if width < 384 or height < 384:
-        sys.exit("width and height should at least be 384")
+    aspect_ratio = width / height
+    min_size = min(width, height)
+    if min_size < 384:
+        n_size = 384
+        if width == min_size:
+            width = n_size
+            height = n_size / aspect_ratio
+        else:
+            height = n_size
+            width = n_size * aspect_ratio
+    width = int(width)
+    height = int(height)
     n_width = width // 8
     n_height = height // 8
     n_width *= 8
