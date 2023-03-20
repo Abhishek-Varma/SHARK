@@ -18,7 +18,6 @@ init_iree_vulkan_target_triple = args.iree_vulkan_target_triple
 init_use_tuned = args.use_tuned
 init_import_mlir = args.import_mlir
 
-
 # Exposed to UI.
 def txt2img_inf(
     prompt: str,
@@ -40,9 +39,12 @@ def txt2img_inf(
     save_metadata_to_png: bool,
     lora_weights: str,
     lora_hf_id: str,
+    vae_weights: str,
+    vae_hf_id: str,
 ):
     from apps.stable_diffusion.web.ui.utils import (
         get_custom_model_pathfile,
+        get_custom_vae_or_lora_weights,
         Config,
     )
     import apps.stable_diffusion.web.utils.global_obj as global_obj
@@ -59,10 +61,6 @@ def txt2img_inf(
     args.scheduler = scheduler
 
     # set ckpt_loc and hf_model_id.
-    types = (
-        ".ckpt",
-        ".safetensors",
-    )  # the tuple of file types
     args.ckpt_loc = ""
     args.hf_model_id = ""
     if custom_model == "None":
@@ -80,14 +78,8 @@ def txt2img_inf(
     args.save_metadata_to_json = save_metadata_to_json
     args.write_metadata_to_png = save_metadata_to_png
 
-    use_lora = ""
-    if lora_weights == "None" and not lora_hf_id:
-        use_lora = ""
-    elif not lora_hf_id:
-        use_lora = lora_weights
-    else:
-        use_lora = lora_hf_id
-    args.use_lora = use_lora
+    args.use_lora = get_custom_vae_or_lora_weights(lora_weights, lora_hf_id, "lora")
+    args.custom_vae = get_custom_vae_or_lora_weights(vae_weights, vae_hf_id, "vae")
 
     dtype = torch.float32 if precision == "fp32" else torch.half
     cpu_scheduling = not scheduler.startswith("Shark")
@@ -101,8 +93,9 @@ def txt2img_inf(
         height,
         width,
         device,
-        use_lora=use_lora,
+        use_lora=args.use_lora,
         use_stencil=None,
+        custom_vae=args.custom_vae,
     )
     if (
         not global_obj.get_sd_obj()
@@ -145,7 +138,7 @@ def txt2img_inf(
                 custom_vae=args.custom_vae,
                 low_cpu_mem_usage=args.low_cpu_mem_usage,
                 debug=args.import_debug if args.import_mlir else False,
-                use_lora=use_lora,
+                use_lora=args.use_lora,
             )
         )
 
