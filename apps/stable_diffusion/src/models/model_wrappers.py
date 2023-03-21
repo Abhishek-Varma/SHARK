@@ -201,6 +201,7 @@ class SharkifyStableDiffusionModel:
             use_tuned=self.use_tuned,
             model_name=self.model_name["vae_encode"],
             extra_args=get_opt_flags("vae", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_vae_encode
 
@@ -256,6 +257,7 @@ class SharkifyStableDiffusionModel:
             generate_vmfb=self.generate_vmfb,
             save_dir=save_dir,
             extra_args=get_opt_flags("vae", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_vae
 
@@ -282,6 +284,7 @@ class SharkifyStableDiffusionModel:
             use_tuned=self.use_tuned,
             model_name=self.model_name["vae"],
             extra_args=get_opt_flags("vae", precision="fp32"),
+            base_model_id=self.base_model_id,
         )
         return shark_vae
 
@@ -334,6 +337,7 @@ class SharkifyStableDiffusionModel:
             f16_input_mask=input_mask,
             use_tuned=self.use_tuned,
             extra_args=get_opt_flags("unet", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_controlled_unet
 
@@ -387,6 +391,7 @@ class SharkifyStableDiffusionModel:
             f16_input_mask=input_mask,
             use_tuned=self.use_tuned,
             extra_args=get_opt_flags("unet", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_cnet
 
@@ -445,6 +450,7 @@ class SharkifyStableDiffusionModel:
             generate_vmfb=self.generate_vmfb,
             save_dir=save_dir,
             extra_args=get_opt_flags("unet", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_unet
 
@@ -482,6 +488,7 @@ class SharkifyStableDiffusionModel:
             f16_input_mask=input_mask,
             use_tuned=self.use_tuned,
             extra_args=get_opt_flags("unet", precision=self.precision),
+            base_model_id=self.base_model_id,
         )
         return shark_unet
 
@@ -515,6 +522,7 @@ class SharkifyStableDiffusionModel:
             generate_vmfb=self.generate_vmfb,
             save_dir=save_dir,
             extra_args=get_opt_flags("clip", precision="fp32"),
+            base_model_id=self.base_model_id,
         )
         return shark_clip
 
@@ -542,6 +550,7 @@ class SharkifyStableDiffusionModel:
     # Compiles Clip, Unet and Vae with `base_model_id` as defining their input
     # configiration.
     def compile_all(self, base_model_id, need_vae_encode, need_stencil):
+        self.base_model_id = base_model_id
         self.inputs = get_input_info(
             base_models[base_model_id],
             self.max_len,
