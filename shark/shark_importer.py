@@ -395,6 +395,7 @@ def import_with_fx(
         except:
             golden_values = None
     # TODO: Control the decompositions.
+    print("Make fx")
     fx_g = make_fx(
         model,
         decomposition_table=get_decompositions(
@@ -413,6 +414,7 @@ def import_with_fx(
         ),
     )(*inputs)
 
+    print("Fx_g")
     fx_g.graph.set_codegen(torch.fx.graph.CodeGen())
     fx_g.recompile()
 

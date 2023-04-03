@@ -189,6 +189,7 @@ def main():
     set_init_device_flags()
     schedulers = get_schedulers(args.hf_model_id)
     scheduler_obj = schedulers[args.scheduler]
+    # scheduler_obj = None
     seed = args.seed
     txt2img_obj = Text2ImagePipeline.from_pretrained(
         scheduler=scheduler_obj,

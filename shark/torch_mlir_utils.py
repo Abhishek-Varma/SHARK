@@ -74,6 +74,7 @@ def get_torch_mlir_module(
         use_tracing=jit_trace,
         ignore_traced_shapes=ignore_traced_shapes,
     )
+    # mlir_module.dump()
     if return_str:
         return mlir_module.operation.get_asm()
     bytecode_stream = io.BytesIO()
