@@ -347,6 +347,13 @@ p.add_argument(
 )
 
 p.add_argument(
+    "--use_tome",
+    default=False,
+    action=argparse.BooleanOptionalAction,
+    help="Apply ToMe patch",
+)
+
+p.add_argument(
     "--use_quantize",
     type=str,
     default="none",

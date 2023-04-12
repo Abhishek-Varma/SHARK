@@ -62,6 +62,7 @@ def img2img_inf(
     save_metadata_to_png: bool,
     lora_weights: str,
     lora_hf_id: str,
+    use_tome: bool,
     ondemand: bool,
 ):
     from apps.stable_diffusion.web.ui.utils import (
@@ -83,6 +84,7 @@ def img2img_inf(
     args.scheduler = scheduler
     args.img_path = "not none"
     args.ondemand = ondemand
+    args.use_tome = use_tome
     if ondemand and batch_count > 1:
         print("Low VRAM mode currently only supports 1 batch count.")
         batch_count = 1
@@ -143,6 +145,7 @@ def img2img_inf(
         width,
         device,
         use_lora=args.use_lora,
+        use_tome=use_tome,
         use_stencil=use_stencil,
         ondemand=ondemand,
     )
@@ -212,6 +215,7 @@ def img2img_inf(
                     low_cpu_mem_usage=args.low_cpu_mem_usage,
                     debug=args.import_debug if args.import_mlir else False,
                     use_lora=args.use_lora,
+                    use_tome=use_tome,
                     ondemand=args.ondemand,
                 )
             )
@@ -319,6 +323,7 @@ def img2img_api(
         save_metadata_to_png=False,
         lora_weights="None",
         lora_hf_id="",
+        use_tome=False,
         ondemand=False,
     )
     return {
@@ -462,6 +467,11 @@ with gr.Blocks(title="Image-to-Image") as img2img_web:
                             label="Low VRAM",
                             interactive=True,
                         )
+                        use_tome = gr.Checkbox(
+                            value=args.use_tome,
+                            label="Enable ToMe",
+                            interactive=True,
+                        )
                     with gr.Row():
                         with gr.Column(scale=3):
                             guidance_scale = gr.Slider(
@@ -565,6 +575,7 @@ with gr.Blocks(title="Image-to-Image") as img2img_web:
                 save_metadata_to_png,
                 lora_weights,
                 lora_hf_id,
+                use_tome,
                 ondemand,
             ],
             outputs=[img2img_gallery, std_output],

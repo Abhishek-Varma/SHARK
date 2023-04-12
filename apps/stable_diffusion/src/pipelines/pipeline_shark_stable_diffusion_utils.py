@@ -289,6 +289,7 @@ class StableDiffusionPipeline:
         debug: bool = False,
         use_stencil: str = None,
         use_lora: str = "",
+        use_tome: bool = False,
         ddpm_scheduler: DDPMScheduler = None,
         use_quantize=None,
     ):
@@ -322,6 +323,7 @@ class StableDiffusionPipeline:
             is_upscaler=is_upscaler,
             use_stencil=use_stencil,
             use_lora=use_lora,
+            use_tome=use_tome,
             use_quantize=use_quantize,
         )
 

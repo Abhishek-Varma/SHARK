@@ -38,6 +38,7 @@ def main():
         low_cpu_mem_usage=args.low_cpu_mem_usage,
         debug=args.import_debug if args.import_mlir else False,
         use_lora=args.use_lora,
+        use_tome=args.use_tome,
         use_quantize=args.use_quantize,
         ondemand=args.ondemand,
     )

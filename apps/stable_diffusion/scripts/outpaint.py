@@ -105,6 +105,7 @@ def outpaint_inf(
         width,
         device,
         use_lora=args.use_lora,
+        use_tome=args.use_tome,
         use_stencil=None,
     )
     if (

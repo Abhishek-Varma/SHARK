@@ -3,6 +3,7 @@ from transformers import CLIPTextModel
 from collections import defaultdict
 import torch
 import safetensors.torch
+import tomesd
 import traceback
 import sys
 import os
@@ -81,6 +82,7 @@ class SharkifyStableDiffusionModel:
         is_upscaler: bool = False,
         use_stencil: str = None,
         use_lora: str = "",
+        use_tome: bool = False,
         use_quantize: str = None,
         return_mlir: bool = False,
     ):
@@ -127,6 +129,7 @@ class SharkifyStableDiffusionModel:
         if use_lora != "":
             self.model_name = self.model_name + "_" + get_path_stem(use_lora)
         self.use_lora = use_lora
+        self.use_tome = use_tome
 
         print(self.model_name)
         self.model_name = self.get_extended_name_for_all_model()
@@ -162,6 +165,9 @@ class SharkifyStableDiffusionModel:
                     model_config = model_config + get_path_stem(self.custom_vae)
                 if self.base_vae:
                     sub_model = "base_vae"
+            if "unet" == model:
+                if self.use_tome:
+                    model_config = model_config + "_tome"
             model_name[model] = get_extended_name(sub_model + model_config)
             index += 1
         return model_name
@@ -392,13 +398,15 @@ class SharkifyStableDiffusionModel:
 
     def get_unet(self):
         class UnetModel(torch.nn.Module):
-            def __init__(self, model_id=self.model_id, low_cpu_mem_usage=False, use_lora=self.use_lora):
+            def __init__(self, model_id=self.model_id, low_cpu_mem_usage=False, use_lora=self.use_lora, use_tome=self.use_tome):
                 super().__init__()
                 self.unet = UNet2DConditionModel.from_pretrained(
                     model_id,
                     subfolder="unet",
                     low_cpu_mem_usage=low_cpu_mem_usage,
                 )
+                if use_tome:
+                    self.unet = tomesd.apply_patch(self.unet, ratio=0.5)
                 if use_lora != "":
                     update_lora_weight(self.unet, use_lora, "unet")
                 self.in_channels = self.unet.in_channels
@@ -409,6 +417,20 @@ class SharkifyStableDiffusionModel:
                     else:
                         self.unet.set_attention_slice(args.attention_slicing)
 
+            def isinstance_str(self, x: object, cls_name: str):
+                """
+                Checks whether x has any class *named* cls_name in its ancestry.
+                Doesn't require access to the class's implementation.
+                
+                Useful for patching!
+                """
+
+                for _cls in x.__class__.__mro__:
+                    if _cls.__name__ == cls_name:
+                        return True
+
+                return False
+            
             # TODO: Instead of flattening the `control` try to use the list.
             def forward(
                 self, latent, timestep, text_embedding, guidance_scale,
