@@ -22,9 +22,9 @@ from transformers import BertTokenizer
 from transformers.generation import GenerationConfig, LogitsProcessorList
 import copy
 # QFormer, eva_vit, blip_processor, dist_utils
-from apps.stable_diffusion.web.ui.minigpt4.models.Qformer import BertConfig, BertLMHeadModel
+from apps.stable_diffusion.web.ui.minigpt4.Qformer import BertConfig, BertLMHeadModel
 from apps.stable_diffusion.web.ui.minigpt4.dist_utils import download_cached_file
-from apps.stable_diffusion.web.ui.minigpt4.models.eva_vit import create_eva_vit_g
+from apps.stable_diffusion.web.ui.minigpt4.eva_vit import create_eva_vit_g
 
 class LayerNorm(torch.nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
@@ -434,16 +434,539 @@ def get_qformer_bert_model(qformer_bert):
     print("Generated qformerBertModel_fp32_cuda.vmfb")
     return shark_QformerBertModel, qformerBertModel_mlir
 
+class FirstLlamaModel(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        print('SHARK: Loading LLAMA Done')
+
+    def forward(self, inputs_embeds, position_ids, attention_mask):
+        print("************************************")
+        print("inputs_embeds: ", inputs_embeds.shape, " dtype: ", inputs_embeds.dtype)
+        print("position_ids: ", position_ids.shape, " dtype: ", position_ids.dtype)
+        print("attention_mask: ", attention_mask.shape, " dtype: ", attention_mask.dtype)
+        print("************************************")
+        config = {
+            'inputs_embeds':inputs_embeds,
+            'position_ids':position_ids,
+            'past_key_values':None,
+            'use_cache':True,
+            'attention_mask':attention_mask,        
+        }
+        output = self.model(
+                **config,
+                return_dict=True,
+                output_attentions=False,
+                output_hidden_states=False,
+            )
+        return_vals = []        
+        return_vals.append(output.logits)
+        temp_past_key_values = output.past_key_values
+        for item in temp_past_key_values:
+            return_vals.append(item[0])
+            return_vals.append(item[1])
+        return tuple(return_vals)
+
+class SecondLlamaModel(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        print('SHARK: Loading LLAMA Done')
+
+    def forward(self, input_ids, position_ids, attention_mask,
+        i1,
+        i2,
+        i3,
+        i4,
+        i5,
+        i6,
+        i7,
+        i8,
+        i9,
+        i10,
+        i11,
+        i12,
+        i13,
+        i14,
+        i15,
+        i16,
+        i17,
+        i18,
+        i19,
+        i20,
+        i21,
+        i22,
+        i23,
+        i24,
+        i25,
+        i26,
+        i27,
+        i28,
+        i29,
+        i30,
+        i31,
+        i32,
+        i33,
+        i34,
+        i35,
+        i36,
+        i37,
+        i38,
+        i39,
+        i40,
+        i41,
+        i42,
+        i43,
+        i44,
+        i45,
+        i46,
+        i47,
+        i48,
+        i49,
+        i50,
+        i51,
+        i52,
+        i53,
+        i54,
+        i55,
+        i56,
+        i57,
+        i58,
+        i59,
+        i60,
+        i61,
+        i62,
+        i63,
+        i64):
+        print("************************************")
+        print("input_ids: ", input_ids.shape, " dtype: ", input_ids.dtype)
+        print("position_ids: ", position_ids.shape, " dtype: ", position_ids.dtype)
+        print("attention_mask: ", attention_mask.shape, " dtype: ", attention_mask.dtype)
+        print("past_key_values: ", i1.shape, i2.shape, i63.shape, i64.shape)
+        print("past_key_values dtype: ", i1.dtype)
+        print("************************************")
+        config = {
+            'input_ids':input_ids,
+            'position_ids':position_ids,
+            'past_key_values':(
+            (i1, i2),
+            (
+                i3,
+                i4,
+            ),
+            (
+                i5,
+                i6,
+            ),
+            (
+                i7,
+                i8,
+            ),
+            (
+                i9,
+                i10,
+            ),
+            (
+                i11,
+                i12,
+            ),
+            (
+                i13,
+                i14,
+            ),
+            (
+                i15,
+                i16,
+            ),
+            (
+                i17,
+                i18,
+            ),
+            (
+                i19,
+                i20,
+            ),
+            (
+                i21,
+                i22,
+            ),
+            (
+                i23,
+                i24,
+            ),
+            (
+                i25,
+                i26,
+            ),
+            (
+                i27,
+                i28,
+            ),
+            (
+                i29,
+                i30,
+            ),
+            (
+                i31,
+                i32,
+            ),
+            (
+                i33,
+                i34,
+            ),
+            (
+                i35,
+                i36,
+            ),
+            (
+                i37,
+                i38,
+            ),
+            (
+                i39,
+                i40,
+            ),
+            (
+                i41,
+                i42,
+            ),
+            (
+                i43,
+                i44,
+            ),
+            (
+                i45,
+                i46,
+            ),
+            (
+                i47,
+                i48,
+            ),
+            (
+                i49,
+                i50,
+            ),
+            (
+                i51,
+                i52,
+            ),
+            (
+                i53,
+                i54,
+            ),
+            (
+                i55,
+                i56,
+            ),
+            (
+                i57,
+                i58,
+            ),
+            (
+                i59,
+                i60,
+            ),
+            (
+                i61,
+                i62,
+            ),
+            (
+                i63,
+                i64,
+            ),
+        ),
+            'use_cache':True,
+            'attention_mask':attention_mask,        
+        }
+        output = self.model(
+                **config,
+                return_dict=True,
+                output_attentions=False,
+                output_hidden_states=False,
+            )
+        return_vals = []        
+        return_vals.append(output.logits)
+        temp_past_key_values = output.past_key_values
+        for item in temp_past_key_values:
+            return_vals.append(item[0])
+            return_vals.append(item[1])
+        return tuple(return_vals)
+
+import torch
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch._decomp import get_decompositions
+from typing import List
+from io import BytesIO
+from apps.stable_diffusion.src.utils import (
+    _compile_module,
+    args,
+)
+from shark.shark_inference import SharkInference
+import os
+args.load_vmfb = True
+import torch_mlir
+from torch_mlir import TensorPlaceholder
+import ctypes
+
+def compile_llama(
+    llama_model,
+    input_ids=None,
+    inputs_embeds=None,
+    attention_mask=None,
+    position_ids=None,
+    past_key_value=None,
+    llama_list=[],
+):
+    attention_mask_placeholder = TensorPlaceholder.like(
+        attention_mask, dynamic_axes=[1]
+    )
+    is_first_llama = False
+    if inputs_embeds is not None:
+        is_first_llama = True
+        extended_model_name = "first_llama_fp32_padding_170"
+        vmfb_path = "first_llama_fp32_padding_170.vmfb"
+        inputs_embeds_placeholder = TensorPlaceholder.like(
+            inputs_embeds, dynamic_axes=[1]
+        )
+        position_ids_placeholder = TensorPlaceholder.like(
+            position_ids, dynamic_axes=[1]
+        )
+        fx_g = make_fx(
+            llama_model,
+            decomposition_table=get_decompositions(
+                [
+                    torch.ops.aten.embedding_dense_backward,
+                    torch.ops.aten.native_layer_norm_backward,
+                    torch.ops.aten.slice_backward,
+                    torch.ops.aten.select_backward,
+                    torch.ops.aten.norm.ScalarOpt_dim,
+                    torch.ops.aten.native_group_norm,
+                    torch.ops.aten.upsample_bilinear2d.vec,
+                    torch.ops.aten.split.Tensor,
+                    torch.ops.aten.split_with_sizes,
+                ]
+            ),
+        )(inputs_embeds, position_ids, attention_mask)
+        example_inputs = [inputs_embeds, position_ids, attention_mask]
+        # example_inputs = [inputs_embeds_placeholder, position_ids_placeholder, attention_mask_placeholder]
+    else:
+        extended_model_name = "second_llama_fp32_padding_170"
+        vmfb_path = "second_llama_fp32_padding_170.vmfb"
+        past_key_value_placeholder = []
+        for i in past_key_value:
+            past_key_value_placeholder.append(
+                TensorPlaceholder.like(
+                    i, dynamic_axes=[2]
+                )
+            )
+        fx_g = make_fx(
+            llama_model,
+            decomposition_table=get_decompositions(
+                [
+                    torch.ops.aten.embedding_dense_backward,
+                    torch.ops.aten.native_layer_norm_backward,
+                    torch.ops.aten.slice_backward,
+                    torch.ops.aten.select_backward,
+                    torch.ops.aten.norm.ScalarOpt_dim,
+                    torch.ops.aten.native_group_norm,
+                    torch.ops.aten.upsample_bilinear2d.vec,
+                    torch.ops.aten.split.Tensor,
+                    torch.ops.aten.split_with_sizes,
+                ]
+            ),
+        )(
+            input_ids, position_ids, attention_mask, *past_key_value
+        )
+        example_inputs = [input_ids, position_ids, attention_mask, *past_key_value]
+        # example_inputs = [input_ids, position_ids, attention_mask_placeholder, *past_key_value_placeholder]
+
+    def _remove_nones(fx_g: torch.fx.GraphModule) -> List[int]:
+        removed_indexes = []
+        for node in fx_g.graph.nodes:
+            if node.op == "output":
+                assert (
+                    len(node.args) == 1
+                ), "Output node must have a single argument"
+                node_arg = node.args[0]
+                if isinstance(node_arg, (list, tuple)):
+                    node_arg = list(node_arg)
+                    node_args_len = len(node_arg)
+                    for i in range(node_args_len):
+                        curr_index = node_args_len - (i + 1)
+                        if node_arg[curr_index] is None:
+                            removed_indexes.append(curr_index)
+                            node_arg.pop(curr_index)
+                    node.args = (tuple(node_arg),)
+                    break
+
+        if len(removed_indexes) > 0:
+            fx_g.graph.lint()
+            fx_g.graph.eliminate_dead_code()
+            fx_g.recompile()
+        removed_indexes.sort()
+        return removed_indexes
+
+    def _unwrap_single_tuple_return(fx_g: torch.fx.GraphModule) -> bool:
+        """
+        Replace tuple with tuple element in functions that return one-element tuples.
+        Returns true if an unwrapping took place, and false otherwise.
+        """
+        unwrapped_tuple = False
+        for node in fx_g.graph.nodes:
+            if node.op == "output":
+                assert (
+                    len(node.args) == 1
+                ), "Output node must have a single argument"
+                node_arg = node.args[0]
+                if isinstance(node_arg, tuple):
+                    if len(node_arg) == 1:
+                        node.args = (node_arg[0],)
+                        unwrapped_tuple = True
+                        break
+
+        if unwrapped_tuple:
+            fx_g.graph.lint()
+            fx_g.recompile()
+        return unwrapped_tuple
+
+    def transform_fx(fx_g):
+        for node in fx_g.graph.nodes:
+            if node.op == "call_function":
+                if node.target in [
+                    torch.ops.aten.empty,
+                ]:
+                    # aten.empty should be filled with zeros.
+                    if node.target in [torch.ops.aten.empty]:
+                        with fx_g.graph.inserting_after(node):
+                            new_node = fx_g.graph.call_function(
+                                torch.ops.aten.zero_,
+                                args=(node,),
+                            )
+                            node.append(new_node)
+                            node.replace_all_uses_with(new_node)
+                            new_node.args = (node,)
+
+        fx_g.graph.lint()
+
+    transform_fx(fx_g)
+    fx_g.recompile()
+    removed_none_indexes = _remove_nones(fx_g)
+    was_unwrapped = _unwrap_single_tuple_return(fx_g)
+
+    fx_g.graph.set_codegen(torch.fx.graph.CodeGen())
+    fx_g.recompile()
+
+    print("FX_G recompile")
+
+    def strip_overloads(gm):
+        """
+        Modifies the target of graph nodes in :attr:`gm` to strip overloads.
+        Args:
+            gm(fx.GraphModule): The input Fx graph module to be modified
+        """
+        for node in gm.graph.nodes:
+            if isinstance(node.target, torch._ops.OpOverload):
+                node.target = node.target.overloadpacket
+        gm.recompile()
+
+    strip_overloads(fx_g)
+    # print(fx_g.graph)
+    ts_g = torch.jit.script(fx_g)
+    
+    # need_to_compile = True
+    args.load_vmfb = True
+    if args.load_vmfb:
+        if os.path.isfile(vmfb_path):
+            print(f"loading existing vmfb from: {vmfb_path}")
+            llama_list.append(SharkInference(
+                None,
+                device="cuda",
+                mlir_dialect="tm_tensor",
+            ))
+            address = id(llama_list[0])
+
+            # Access the value at the memory address using c_long
+            value = ctypes.c_long.from_address(address).value
+            print("Reference count within compilation = ", value)
+            llama_list[0].load_module(vmfb_path, extra_args=[])
+            return
+            # shark_module = SharkInference(
+            #     None,
+            #     device="cuda",
+            #     mlir_dialect="tm_tensor",
+            # )
+            # print(f"loading existing vmfb from: {vmfb_path}")
+            # shark_module.load_module(vmfb_path, extra_args=[])
+            # address = id(shark_module)
+
+            # # Access the value at the memory address using c_long
+            # value = ctypes.c_long.from_address(address).value
+            # print("Reference count within compilation = ", value)
+            # return shark_module
+            # return SharkInference(
+            #     None,
+            #     device="cuda",
+            #     mlir_dialect="tm_tensor",
+            # ).load_module(vmfb_path, extra_args=[])
+
+    # if need_to_compile:
+    print("Compiling via torch-mlir")
+    mlir_module = torch_mlir.compile(
+        ts_g, example_inputs, output_type="linalg-on-tensors"
+    )
+    print("Compilation success. Will write to file now.")
+    from contextlib import redirect_stdout
+    #import sys
+    #with open('second_llama_torch_fp32_after_broadcast_fix_elided.mlir', 'w') as sys.stdout:
+    #    #with redirect_stdout(f):
+    #    print(mlir_module.operation.get_asm(large_elements_limit=4))
+    #return mlir_module
+
+    # with open('first_llama_fp32_padding_170.mlir', 'w') as f:
+    #    with redirect_stdout(f):
+    #        print(mlir_module.operation.get_asm(large_elements_limit=4))
+
+    print("Elided IR written into file successfully.")
+    # if is_first_llama:
+    #     with open('first_llama_minigpt_linalg_ir_dynamic.mlir', 'w') as f:
+    #         with redirect_stdout(f):
+    #             print(mlir_module.operation.get_asm())
+    # else:
+    #     with open('second_llama_minigpt_linalg_ir_dynamic_after_broadcast_fix.mlir', 'w') as f:
+    #         with redirect_stdout(f):
+    #             print(mlir_module.operation.get_asm())
+    print("Non-Elided IR written into file successfully.")
+    # import sys
+    # sys.exit()
+    bytecode_stream = BytesIO()
+    mlir_module.operation.write_bytecode(bytecode_stream)
+    bytecode = bytecode_stream.getvalue()
+
+    shark_module = SharkInference(
+        mlir_module=bytecode, device="cuda", mlir_dialect="tm_tensor"
+    )
+    shark_module = _compile_module(shark_module, extended_model_name, [])
+    return shark_module
+
 class Chat:
+    # def __init__(self, model, first_llama_model, vis_processor, device='cpu'):
+    #     self.device = device
+    #     self.model = model
+    #     self.first_llama_model_shark = first_llama_model
+    #     # self.second_llama_model_shark = second_llama_model
+    #     self.vis_processor = vis_processor
+    #     stop_words_ids = [torch.tensor([835]).to(self.device),
+    #                       torch.tensor([2277, 29937]).to(self.device)]  # '###' can be encoded in two different ways.
+    #     self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
     def __init__(self, model, vis_processor, device='cpu'):
         self.device = device
         self.model = model
         self.vis_processor = vis_processor
-        stop_words_ids = [torch.tensor([835]),
-                          torch.tensor([2277, 29937])]
-        #stop_words_ids = [torch.tensor([835]).to(self.device),
-        #                  torch.tensor([2277, 29937]).to(self.device)]  # '###' can be encoded in two different ways.
+        stop_words_ids = [torch.tensor([835]).to(self.device),
+                          torch.tensor([2277, 29937]).to(self.device)]  # '###' can be encoded in two different ways.
         self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
+        self.first_llama_model = FirstLlamaModel(model.llama_model)
+        self.second_llama_model = SecondLlamaModel(model.llama_model)
 
     def ask(self, text, conv):
         if len(conv.messages) > 0 and conv.messages[-1][0] == conv.roles[0] \
@@ -452,11 +975,38 @@ class Chat:
         else:
             conv.append_message(conv.roles[0], text)
 
+    def compile_first_llama(self, llama_list, isPyTorchVariant = True):
+        if isPyTorchVariant:
+            llama_list.append(self.first_llama_model)
+            return
+        inputs_embeds = torch.zeros((1,170, 4096), dtype=torch.float32)
+        position_ids = torch.zeros((1,170), dtype=torch.int64)
+        attention_mask = torch.zeros((1,170), dtype=torch.int32)
+        print("Going to compile First Llama")
+        compile_llama(self.first_llama_model, inputs_embeds=inputs_embeds, position_ids=position_ids, attention_mask=attention_mask, llama_list=llama_list)
+        print("Compilation complete for First llama. You may check .mlir and .vmfb files")
+        # return first_llama_model_shark
+
+    def compile_second_llama(self, llama_list, isPyTorchVariant = True):
+        if isPyTorchVariant:
+            llama_list.append(self.second_llama_model)
+            return
+        input_ids = torch.zeros((1,1), dtype=torch.int64)
+        position_ids = torch.zeros((1,1), dtype=torch.int64)
+        attention_mask = torch.zeros((1,171), dtype=torch.int32)
+        past_key_value = []
+        for i in range(64):
+            past_key_value.append(torch.zeros(1,32,170,128, dtype=torch.float32))
+
+        print("Going to compile Second Llama")
+        compile_llama(self.second_llama_model, input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, past_key_value=past_key_value, llama_list=llama_list)
+        print("Compilation complete for Second llama. You may check .mlir and .vmfb files")
+        # return second_llama_model_shark
+
     def answer(self, conv, img_list, max_new_tokens=300, num_beams=1, min_length=1, top_p=0.9,
-               repetition_penalty=1.0, length_penalty=1, temperature=1.0, max_length=2000):
+               repetition_penalty=1.0, length_penalty=1, temperature=1.0, max_length=2000, first_llama_model=None, second_llama_model=None, isPyTorchVariant=True):
         conv.append_message(conv.roles[1], None)
-        # embs = self.get_context_emb(conv, img_list, max_length - max_new_tokens)
-        embs = self.get_context_emb(conv, img_list)
+        embs = self.get_context_emb(conv, img_list, max_length - max_new_tokens)
 
         current_max_len = embs.shape[1] + max_new_tokens
 
@@ -466,8 +1016,13 @@ class Chat:
         begin_idx = max(0, current_max_len - max_length)
 
         embs = embs[:, begin_idx:]
+        print("************")
+        print("Embs", embs.shape)
+        print("************")
 
-        #############################################
+        #########################################################################################################
+        from transformers.generation import GenerationConfig, LogitsProcessorList
+        import copy
         generation_config = GenerationConfig.from_model_config(self.model.llama_model.config)
         kwargs = {
             "inputs_embeds":embs,
@@ -500,6 +1055,9 @@ class Chat:
                 torch.tensor([torch.all(torch.eq(inputs_tensor[:,d,:], embs_for_pad_token_id)).int() for d in range(inputs_tensor.shape[1])]
                             ).unsqueeze(0)
         ).int()
+        attention_meta_data = (model_kwargs["attention_mask"][0] == 0).nonzero(as_tuple=True)[0]
+        first_zero = attention_meta_data[0].item()
+        last_zero = attention_meta_data[-1].item()
         input_ids = inputs_tensor if model_input_name == "input_ids" else model_kwargs.pop("input_ids")
         input_ids_seq_length = input_ids.shape[-1]
         generation_config.max_length = generation_config.max_new_tokens + input_ids_seq_length
@@ -512,6 +1070,7 @@ class Chat:
         )
         # DOUBT: stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
+        pad_token_id = generation_config.pad_token_id
         eos_token_id = generation_config.eos_token_id
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
@@ -527,20 +1086,81 @@ class Chat:
 
         # keep track of which sequences are already finished
         unfinished_sequences = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
-        print("Generating tokens now")
+        i = 0
+        timesRan = 0
+        llama_list = []
         while True:
+            print("****** Iteration %d ******" % (i))
             # prepare model inputs
             model_inputs = self.model.llama_model.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             # forward pass to get next token
-            outputs = self.model.llama_model.forward(
-                **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-            )
+            if i == 0:
+                if not isPyTorchVariant:
+                    shark_inputs = []
+                    shark_inputs.append(model_inputs['inputs_embeds'].detach())
+                    shark_inputs.append(model_inputs['position_ids'].detach())
+                    shark_inputs.append(model_inputs['attention_mask'].detach())
 
-            next_token_logits = outputs.logits[:, -1, :]
+                    self.compile_first_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    outputs_shark = llama_list[0]("forward", shark_inputs)
+                    outputs = []
+                    for out_shark in outputs_shark:
+                        outputs.append(torch.from_numpy(out_shark))
+                    del outputs_shark
+                else:
+                    self.compile_first_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    outputs = llama_list[0](
+                        model_inputs['inputs_embeds'],
+                        model_inputs['position_ids'],
+                        model_inputs['attention_mask'],
+                    )
+                
+                # x = llama_list[0]
+                address = id(llama_list[0])
+
+                # Access the value at the memory address using c_long
+                value = ctypes.c_long.from_address(address).value
+                print("Reference count = ", value)
+                llama_list.clear()
+                torch.cuda.empty_cache()
+                value = ctypes.c_long.from_address(address).value
+                print("Reference count = ", value)
+                # del first_llama_model
+            else:
+                # print(*list(model_inputs['past_key_values']))
+                if not isPyTorchVariant:
+                    shark_inputs = []
+                    shark_inputs.append(model_inputs['input_ids'].detach())
+                    shark_inputs.append(model_inputs['position_ids'].detach())
+                    shark_inputs.append(model_inputs['attention_mask'].detach())
+                    for pkv in list(model_inputs['past_key_values']):
+                        shark_inputs.append(pkv.detach())
+                    # outputs_shark = self.second_llama_model_shark("forward", shark_inputs)
+                    self.compile_second_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    outputs_shark = llama_list[0]("forward", shark_inputs)
+                    # outputs_shark = second_llama_model("forward", shark_inputs)
+                    outputs = []
+                    for out_shark in outputs_shark:
+                        outputs.append(torch.from_numpy(out_shark))
+                else:
+                    self.compile_second_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    outputs = llama_list[0](
+                        model_inputs['input_ids'],
+                        model_inputs['position_ids'],
+                        model_inputs['attention_mask'],
+                        *list(model_inputs['past_key_values'])
+                    )
+                # self.compile_second_llama(llama_list=llama_list, isPyTorchVariant=True)
+                # outputs = llama_list[0](
+                #     model_inputs['input_ids'],
+                #     model_inputs['position_ids'],
+                #     model_inputs['attention_mask'],
+                #     *list(model_inputs['past_key_values'])
+                # )
+
+            outputs_logits = outputs[0]
+            next_token_logits = outputs_logits[:, -1, :]
 
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)
@@ -555,10 +1175,26 @@ class Chat:
                 next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
             # update generated ids, model inputs, and length for next step
+            outputs_for_update_func = {
+            }
             input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
             model_kwargs = self.model.llama_model._update_model_kwargs_for_generation(
-                outputs, model_kwargs, is_encoder_decoder=False
+                outputs_for_update_func, model_kwargs, is_encoder_decoder=False
             )
+#             torch.set_printoptions(profile="full")
+#             print("Attention mask: ", str(model_kwargs['attention_mask']))
+            model_kwargs['past_key_values'] = outputs[1:]
+            print(type(model_kwargs['past_key_values']))
+#             print("Past key value: ", str(model_kwargs['past_key_values'][0]))
+            if timesRan >=1 :
+                tmp_attention_mask = torch.cat((model_kwargs['attention_mask'][:, :first_zero],model_kwargs['attention_mask'][:, first_zero+1:]), dim=1)
+                model_kwargs['attention_mask'] = tmp_attention_mask
+                pkv_list = []
+#                 print(len(model_kwargs['past_key_values']))
+                for pkv_pair_tuple in model_kwargs['past_key_values']:
+                    x = torch.cat((pkv_pair_tuple[:,:,:first_zero,:], pkv_pair_tuple[:,:,first_zero+1:,:]), dim=2)
+                    pkv_list.append(x)
+                model_kwargs['past_key_values'] = tuple(pkv_list)
 
             # if eos_token was found in one sentence, set sentence to finished
             if eos_token_id_tensor is not None:
@@ -569,17 +1205,39 @@ class Chat:
             # stop when each sentence is finished, or if we exceed the maximum length
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
+            
+            i = i + 1
+            timesRan += 1
+            """"""
+            output_token = input_ids[0] 
+
+
+            if output_token[0] == 0:  # the model might output a unknow token <unk> at the beginning. remove it
+                output_token = output_token[1:]
+            if output_token[0] == 1:  # some users find that there is a start token <s> at the beginning. remove it
+                output_token = output_token[1:]
+            output_text = self.model.llama_tokenizer.decode(output_token, add_special_tokens=False)
+            output_text = output_text.split('###')[0]  # remove the stop sign '###'
+            output_text = output_text.split('Assistant:')[-1].strip()
+            
+            print("Out: ", str(output_text))
+            # if i == 1:
+            #     from numba import cuda 
+            #     device = cuda.get_current_device()
+            #     device.reset()
+            """"""
+        llama_list.clear()
         output_token = input_ids[0]
-        #############################################
+
+
         if output_token[0] == 0:  # the model might output a unknow token <unk> at the beginning. remove it
             output_token = output_token[1:]
         if output_token[0] == 1:  # some users find that there is a start token <s> at the beginning. remove it
             output_token = output_token[1:]
-        output_text = self.model.llama_tokenizer.decode(output_token, add_special_tokens=False, skip_special_tokens=True)
+        output_text = self.model.llama_tokenizer.decode(output_token, add_special_tokens=False)
         output_text = output_text.split('###')[0]  # remove the stop sign '###'
         output_text = output_text.split('Assistant:')[-1].strip()
         conv.messages[-1][1] = output_text
-        print("Output: ", output_text)
         return output_text, output_token.cpu().numpy()
 
     def upload_img(self, image, conv, img_list):
@@ -595,9 +1253,9 @@ class Chat:
             image = image.to(self.device)
 
         device = image.device
-        # if self.model.low_resource:
-        #     self.model.vit_to_cpu()
-        #     image = image.to("cpu")
+        if self.model.low_resource:
+            self.model.vit_to_cpu()
+            image = image.to("cpu")
 
         with self.model.maybe_autocast():
             shark_visionModel = get_vision_model(self.model.ln_vision, self.model.visual_encoder)
@@ -623,8 +1281,9 @@ class Chat:
         # self.conv.append_message(self.conv.roles[1], msg)
         return msg
 
-    """
+    #"""
     def get_context_emb(self, conv, img_list, max_allowed_tokens=200):
+        print("Will pad the input now")
         self.model.llama_tokenizer.padding_side = "left"
         prompt = conv.get_prompt()
         prompt_segs = prompt.split('<ImageHere>')
@@ -656,25 +1315,28 @@ class Chat:
         mixed_embs = [mixed_embs_pre] + [mixed_embs_post]
         mixed_embs = torch.cat(mixed_embs, dim=1)
         
+        print("Input after padding : ", str(mixed_embs.shape))
         return mixed_embs
-    #"""
+        
+    """
     def get_context_emb(self, conv, img_list):
         prompt = conv.get_prompt()
         prompt_segs = prompt.split('<ImageHere>')
+        # print(prompt_segs)
         assert len(prompt_segs) == len(img_list) + 1, "Unmatched numbers of image placeholders and images."
-        self.model.llama_tokenizer.padding_side = "right"
-        #import pdb
-        #pdb.set_trace()
         seg_tokens = [
             self.model.llama_tokenizer(
                 seg, return_tensors="pt", add_special_tokens=i == 0).to(self.device).input_ids
             # only add bos to the first seg
             for i, seg in enumerate(prompt_segs)
         ]
-        #self.model.llama_model.model.to('cuda')
+        # print("Seg Tokens: ", seg_tokens)
+        # print("Image List: ", img_list)
         seg_embs = [self.model.llama_model.model.embed_tokens(seg_t) for seg_t in seg_tokens]
-        #self.model.llama_model.model.to('cpu')
-        mixed_embs = [emb.to('cpu') for pair in zip(seg_embs[:-1], img_list) for emb in pair] + [seg_embs[-1].to('cpu')]
+        # print("seg_embs:", seg_embs)
+        mixed_embs = [emb for pair in zip(seg_embs[:-1], img_list) for emb in pair] + [seg_embs[-1]]
+        # print("mixed_embs:", mixed_embs)
         mixed_embs = torch.cat(mixed_embs, dim=1)
+        # print("mixed_embs cat:", mixed_embs)
         return mixed_embs
-    #"""
+    """
