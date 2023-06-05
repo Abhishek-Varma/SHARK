@@ -702,6 +702,7 @@ from apps.stable_diffusion.src.utils import (
     args,
 )
 from shark.shark_inference import SharkInference
+from shark.shark_importer import import_with_fx
 import os
 args.load_vmfb = True
 import torch_mlir
@@ -716,6 +717,7 @@ def compile_llama(
     position_ids=None,
     past_key_value=None,
     llama_list=[],
+    is_fp16=False,
 ):
     attention_mask_placeholder = TensorPlaceholder.like(
         attention_mask, dynamic_axes=[1]
@@ -731,55 +733,97 @@ def compile_llama(
         position_ids_placeholder = TensorPlaceholder.like(
             position_ids, dynamic_axes=[1]
         )
-        fx_g = make_fx(
-            llama_model,
-            decomposition_table=get_decompositions(
-                [
-                    torch.ops.aten.embedding_dense_backward,
-                    torch.ops.aten.native_layer_norm_backward,
-                    torch.ops.aten.slice_backward,
-                    torch.ops.aten.select_backward,
-                    torch.ops.aten.norm.ScalarOpt_dim,
-                    torch.ops.aten.native_group_norm,
-                    torch.ops.aten.upsample_bilinear2d.vec,
-                    torch.ops.aten.split.Tensor,
-                    torch.ops.aten.split_with_sizes,
-                ]
-            ),
-        )(inputs_embeds, position_ids, attention_mask)
         example_inputs = [inputs_embeds, position_ids, attention_mask]
+        # f16_input_mask = [True, False, False]
+        f16_input_mask = [False, True, True]
+        # fx_g = make_fx(
+        #     llama_model,
+        #     decomposition_table=get_decompositions(
+        #         [
+        #             torch.ops.aten.embedding_dense_backward,
+        #             torch.ops.aten.native_layer_norm_backward,
+        #             torch.ops.aten.slice_backward,
+        #             torch.ops.aten.select_backward,
+        #             torch.ops.aten.norm.ScalarOpt_dim,
+        #             torch.ops.aten.native_group_norm,
+        #             torch.ops.aten.upsample_bilinear2d.vec,
+        #             torch.ops.aten.split.Tensor,
+        #             torch.ops.aten.split_with_sizes,
+        #         ]
+        #     ),
+        # )(inputs_embeds, position_ids, attention_mask)
         # example_inputs = [inputs_embeds_placeholder, position_ids_placeholder, attention_mask_placeholder]
     else:
         extended_model_name = "second_llama_fp32_padding_170"
         vmfb_path = "second_llama_fp32_padding_170.vmfb"
         past_key_value_placeholder = []
+        f16_input_mask = [False, False, False]
         for i in past_key_value:
             past_key_value_placeholder.append(
                 TensorPlaceholder.like(
                     i, dynamic_axes=[2]
                 )
             )
-        fx_g = make_fx(
-            llama_model,
-            decomposition_table=get_decompositions(
-                [
-                    torch.ops.aten.embedding_dense_backward,
-                    torch.ops.aten.native_layer_norm_backward,
-                    torch.ops.aten.slice_backward,
-                    torch.ops.aten.select_backward,
-                    torch.ops.aten.norm.ScalarOpt_dim,
-                    torch.ops.aten.native_group_norm,
-                    torch.ops.aten.upsample_bilinear2d.vec,
-                    torch.ops.aten.split.Tensor,
-                    torch.ops.aten.split_with_sizes,
-                ]
-            ),
-        )(
-            input_ids, position_ids, attention_mask, *past_key_value
-        )
+            f16_input_mask.append(True)
         example_inputs = [input_ids, position_ids, attention_mask, *past_key_value]
+        # fx_g = make_fx(
+        #     llama_model,
+        #     decomposition_table=get_decompositions(
+        #         [
+        #             torch.ops.aten.embedding_dense_backward,
+        #             torch.ops.aten.native_layer_norm_backward,
+        #             torch.ops.aten.slice_backward,
+        #             torch.ops.aten.select_backward,
+        #             torch.ops.aten.norm.ScalarOpt_dim,
+        #             torch.ops.aten.native_group_norm,
+        #             torch.ops.aten.upsample_bilinear2d.vec,
+        #             torch.ops.aten.split.Tensor,
+        #             torch.ops.aten.split_with_sizes,
+        #         ]
+        #     ),
+        # )(
+        #     input_ids, position_ids, attention_mask, *past_key_value
+        # )
         # example_inputs = [input_ids, position_ids, attention_mask_placeholder, *past_key_value_placeholder]
 
+    args.load_vmfb = True
+    if args.load_vmfb:
+        if os.path.isfile(vmfb_path):
+            print(f"loading existing vmfb from: {vmfb_path}")
+            llama_list.append(SharkInference(
+                None,
+                device="cuda",
+                mlir_dialect="tm_tensor",
+            ))
+            address = id(llama_list[0])
+
+            # Access the value at the memory address using c_long
+            value = ctypes.c_long.from_address(address).value
+            print("Reference count within compilation = ", value)
+            llama_list[0].load_module(vmfb_path, extra_args=[])
+            return
+    if is_fp16:
+        mlir_module, _ = import_with_fx(
+            model=llama_model,
+            inputs=example_inputs,
+            is_f16=True,
+            f16_input_mask=f16_input_mask,
+            debug=False,
+            model_name=extended_model_name,
+        )
+        print("torch-mlir compiled.")
+        with open(extended_model_name+'_elided.mlir', 'w') as f:
+           with redirect_stdout(f):
+                print(mlir_module.operation.get_asm(large_elements_limit=4))
+        print("Elided IR written")
+        shark_module = SharkInference(
+            mlir_module,
+            device="cuda",
+            mlir_dialect="tm_tensor",
+        )
+        print("Shark module complete.")
+        return _compile_module(shark_module, extended_model_name, [])
+    
     def _remove_nones(fx_g: torch.fx.GraphModule) -> List[int]:
         removed_indexes = []
         for node in fx_g.graph.nodes:
@@ -874,22 +918,6 @@ def compile_llama(
     ts_g = torch.jit.script(fx_g)
     
     # need_to_compile = True
-    args.load_vmfb = True
-    if args.load_vmfb:
-        if os.path.isfile(vmfb_path):
-            print(f"loading existing vmfb from: {vmfb_path}")
-            llama_list.append(SharkInference(
-                None,
-                device="cuda",
-                mlir_dialect="tm_tensor",
-            ))
-            address = id(llama_list[0])
-
-            # Access the value at the memory address using c_long
-            value = ctypes.c_long.from_address(address).value
-            print("Reference count within compilation = ", value)
-            llama_list[0].load_module(vmfb_path, extra_args=[])
-            return
             # shark_module = SharkInference(
             #     None,
             #     device="cuda",
@@ -975,7 +1003,7 @@ class Chat:
         else:
             conv.append_message(conv.roles[0], text)
 
-    def compile_first_llama(self, llama_list, isPyTorchVariant = True):
+    def compile_first_llama(self, llama_list, is_fp16, isPyTorchVariant = True):
         if isPyTorchVariant:
             llama_list.append(self.first_llama_model)
             return
@@ -983,11 +1011,11 @@ class Chat:
         position_ids = torch.zeros((1,170), dtype=torch.int64)
         attention_mask = torch.zeros((1,170), dtype=torch.int32)
         print("Going to compile First Llama")
-        compile_llama(self.first_llama_model, inputs_embeds=inputs_embeds, position_ids=position_ids, attention_mask=attention_mask, llama_list=llama_list)
+        compile_llama(self.first_llama_model, inputs_embeds=inputs_embeds, position_ids=position_ids, attention_mask=attention_mask, llama_list=llama_list, is_fp16=is_fp16)
         print("Compilation complete for First llama. You may check .mlir and .vmfb files")
         # return first_llama_model_shark
 
-    def compile_second_llama(self, llama_list, isPyTorchVariant = True):
+    def compile_second_llama(self, llama_list, is_fp16, isPyTorchVariant = True):
         if isPyTorchVariant:
             llama_list.append(self.second_llama_model)
             return
@@ -999,7 +1027,7 @@ class Chat:
             past_key_value.append(torch.zeros(1,32,170,128, dtype=torch.float32))
 
         print("Going to compile Second Llama")
-        compile_llama(self.second_llama_model, input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, past_key_value=past_key_value, llama_list=llama_list)
+        compile_llama(self.second_llama_model, input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, past_key_value=past_key_value, llama_list=llama_list, is_fp16=is_fp16)
         print("Compilation complete for Second llama. You may check .mlir and .vmfb files")
         # return second_llama_model_shark
 
@@ -1088,7 +1116,9 @@ class Chat:
         unfinished_sequences = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
         i = 0
         timesRan = 0
+        is_fp16 = True
         llama_list = []
+        isPyTorchVariant = False
         while True:
             print("****** Iteration %d ******" % (i))
             # prepare model inputs
@@ -1102,14 +1132,14 @@ class Chat:
                     shark_inputs.append(model_inputs['position_ids'].detach())
                     shark_inputs.append(model_inputs['attention_mask'].detach())
 
-                    self.compile_first_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    self.compile_first_llama(llama_list=llama_list, is_fp16=is_fp16, isPyTorchVariant=isPyTorchVariant)
                     outputs_shark = llama_list[0]("forward", shark_inputs)
                     outputs = []
                     for out_shark in outputs_shark:
                         outputs.append(torch.from_numpy(out_shark))
                     del outputs_shark
                 else:
-                    self.compile_first_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    self.compile_first_llama(llama_list=llama_list, is_fp16=is_fp16, isPyTorchVariant=isPyTorchVariant)
                     outputs = llama_list[0](
                         model_inputs['inputs_embeds'],
                         model_inputs['position_ids'],
@@ -1129,6 +1159,7 @@ class Chat:
                 # del first_llama_model
             else:
                 # print(*list(model_inputs['past_key_values']))
+                isPyTorchVariant = True
                 if not isPyTorchVariant:
                     shark_inputs = []
                     shark_inputs.append(model_inputs['input_ids'].detach())
@@ -1137,14 +1168,14 @@ class Chat:
                     for pkv in list(model_inputs['past_key_values']):
                         shark_inputs.append(pkv.detach())
                     # outputs_shark = self.second_llama_model_shark("forward", shark_inputs)
-                    self.compile_second_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    self.compile_second_llama(llama_list=llama_list, is_fp16=is_fp16, isPyTorchVariant=isPyTorchVariant)
                     outputs_shark = llama_list[0]("forward", shark_inputs)
                     # outputs_shark = second_llama_model("forward", shark_inputs)
                     outputs = []
                     for out_shark in outputs_shark:
                         outputs.append(torch.from_numpy(out_shark))
                 else:
-                    self.compile_second_llama(llama_list=llama_list, isPyTorchVariant=isPyTorchVariant)
+                    self.compile_second_llama(llama_list=llama_list, is_fp16=is_fp16, isPyTorchVariant=isPyTorchVariant)
                     outputs = llama_list[0](
                         model_inputs['input_ids'],
                         model_inputs['position_ids'],

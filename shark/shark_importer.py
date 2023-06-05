@@ -302,12 +302,15 @@ def get_f16_inputs(inputs, is_f16, f16_input_mask):
     if f16_input_mask == None:
         return tuple([x.half() for x in inputs])
 
+    print("Input types :-\n")
     f16_masked_inputs = []
     for i in range(len(inputs)):
+        print("Before: ", inputs[i].dtype)
         if f16_input_mask[i]:
             f16_masked_inputs.append(inputs[i].half())
         else:
             f16_masked_inputs.append(inputs[i])
+        print("After: ", f16_masked_inputs[i].dtype)
 
     return tuple(f16_masked_inputs)
 
@@ -326,6 +329,7 @@ def transform_fx(fx_g):
                 torch.ops.aten.arange,
                 torch.ops.aten.empty,
                 torch.ops.aten.zeros,
+                torch.ops.aten.to.dtype,
             ]:
                 node.kwargs = kwargs_dict
             # Inputs and outputs of aten.var.mean should be upcasted to fp32.
@@ -460,10 +464,14 @@ def import_with_fx(
 
     strip_overloads(fx_g)
 
+    print("FX-G Before :-\n")
+    fx_g.graph.dump()
     if is_f16:
         fx_g = fx_g.half()
         transform_fx(fx_g)
         fx_g.recompile()
+    print("\n\nFX-G After :-\n")
+    fx_g.graph.dump()
 
     if training:
         change_fx_graph_return_to_tuple(fx_g)
