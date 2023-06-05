@@ -178,6 +178,7 @@ class MiniGPT4SHARK(torch.nn.Module):
         self.low_resource = low_resource
 
         print('Loading VIT')
+        print("VIT precision = ", vit_precision)
         self.visual_encoder, self.ln_vision = self.init_vision_encoder(
             vit_model, img_size, drop_path_rate, use_grad_checkpoint, vit_precision
         )
@@ -226,9 +227,15 @@ class MiniGPT4SHARK(torch.nn.Module):
                 device_map={'': device_8bit}
             )
         else:
+            # self.llama_model = LlamaForCausalLM.from_pretrained(
+            #     llama_model,
+            #     torch_dtype=torch.float32,
+            # )
             self.llama_model = LlamaForCausalLM.from_pretrained(
                 llama_model,
-                torch_dtype=torch.float32,
+                torch_dtype=torch.float16,
+                load_in_8bit=True,
+                device_map={'': device_8bit}
             )
 
         for _, param in self.llama_model.named_parameters():
@@ -1243,19 +1250,22 @@ class Chat:
     def upload_img(self, image, conv, img_list):
         if isinstance(image, str):  # is a image path
             raw_image = Image.open(image).convert('RGB')
-            image = self.vis_processor(raw_image).unsqueeze(0).to(self.device)
+            image = self.vis_processor(raw_image).unsqueeze(0)
+            # .to(self.device)
         elif isinstance(image, Image.Image):
             raw_image = image
-            image = self.vis_processor(raw_image).unsqueeze(0).to(self.device)
+            image = self.vis_processor(raw_image).unsqueeze(0)
+            # .to(self.device)
         elif isinstance(image, torch.Tensor):
             if len(image.shape) == 3:
                 image = image.unsqueeze(0)
-            image = image.to(self.device)
+            image = image
+            # .to(self.device)
 
         device = image.device
-        if self.model.low_resource:
-            self.model.vit_to_cpu()
-            image = image.to("cpu")
+        # if self.model.low_resource:
+        #     self.model.vit_to_cpu()
+        #     image = image.to("cpu")
 
         with self.model.maybe_autocast():
             shark_visionModel = get_vision_model(self.model.ln_vision, self.model.visual_encoder)

@@ -561,7 +561,10 @@ second_llama_model_shark = 0
 # chat = Chat(model, first_llama_model_shark, second_llama_model_shark, vis_processor, device='cpu')
 # chat = Chat(model, first_llama_model, second_llama_model_shark, vis_processor, device='cpu')
 # chat = Chat(model, first_llama_model, vis_processor, device='cpu')
-chat = Chat(model, vis_processor, device='cpu')
+# CPU.
+# chat = Chat(model, vis_processor, device='cpu')
+# CUDA.
+chat = Chat(model, vis_processor, device='cuda')
 # chat = Chat(model, lam_func, vis_processor, device='cpu')
 print('Initialization Finished')
 
@@ -635,7 +638,7 @@ def gradio_answer(chatbot, chat_state, img_list, num_beams, temperature):
     print("************")
 
     # Set this variable to switch between shark and pytorch variant.
-    isPyTorchVariant = False
+    isPyTorchVariant = True
     # if first_llama_model_shark == 0:
     #     first_llama_model_shark = compile_first_llama(isPyTorchVariant)
     # if second_llama_model_shark == 0:
