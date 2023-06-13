@@ -354,10 +354,13 @@ def add_upcast(fx_g):
 
 def transform_fx(fx_g):
     import torch
+    from torch.fx.node import Node
+
+    from typing import Dict
 
     kwargs_dict = {
         "dtype": torch.float16,
-        "device": torch.device(type="cpu"),
+        "device": torch.device(type="cuda"),
         "pin_memory": False,
     }
     kwargs_dict1 = {
@@ -438,6 +441,10 @@ def transform_fx(fx_g):
                     new_node.args = (node,)
 
     fx_g.graph.lint()
+    del env
+    del args_iter
+    # import sys
+    # sys.exit()
 
 
 # Doesn't replace the None type.
@@ -537,23 +544,40 @@ def import_with_fx(
 
     strip_overloads(fx_g)
 
-    print("FX-G Before :-\n")
-    fx_g.graph.dump()
+    print("FX-G output fp32 :-\n")
+    out = fx_g(*inputs)[0][:,-1,:]
+    print(out, "\n\t", out.shape)
+    print("Min = ", torch.min(out).item())
+    print("Max = ", torch.max(out).item())
+    print("Mean = ", torch.mean(out).item())
     if is_f16:
+        # print("\n\nFX-G output fp16 with cast :-\n")
+        # out = fx_g(*inputs)[0][:,-1,:].to(torch.float16)
+        # print(out, "\n\t", out.shape)
+        # print("Min = ", torch.min(out).item())
+        # print("Max = ", torch.max(out).item())
+        # print("Mean = ", torch.mean(out).item())
+        inputs = get_f16_inputs(inputs, is_f16, f16_input_mask)
         fx_g = fx_g.half()
         transform_fx(fx_g)
         # TODO: Have to make it more generic.
         add_upcast(fx_g)
         fx_g.recompile()
-    print("\n\nFX-G After :-\n")
-    fx_g.graph.dump()
+        # out = fx_g(*inputs)[0][:,-1,:].to(torch.float16)
+        # print(out, "\n\t", out.shape)
+        # print("Min = ", torch.min(out).item())
+        # print("Max = ", torch.max(out).item())
+        # print("Mean = ", torch.mean(out).item())
+        # return out, out
+        
+    # return
 
     if training:
         change_fx_graph_return_to_tuple(fx_g)
         inputs = flatten_training_input(inputs)
 
+    return fx_g, inputs
     ts_graph = torch.jit.script(fx_g)
-    inputs = get_f16_inputs(inputs, is_f16, f16_input_mask)
     mlir_importer = SharkImporter(
         ts_graph,
         inputs,
