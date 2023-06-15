@@ -70,6 +70,7 @@ class SharkInference:
         dispatch_benchmark: str = None,
         dispatch_benchmark_dir: str = "temp_dispatch_benchmarks",
         device_idx: int = None,
+        mmap: bool = True
     ):
         self.mlir_module = mlir_module
         self.device = shark_args.device if device == "none" else device
@@ -88,6 +89,7 @@ class SharkInference:
         )
 
         self.shark_runner = None
+        self.mmap = mmap
 
     def compile(self, extra_args=[]):
         if self.dispatch_benchmarks is not None:

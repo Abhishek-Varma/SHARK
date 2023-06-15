@@ -229,7 +229,7 @@ class MiniGPT4SHARK(torch.nn.Module):
             self.llama_model = LlamaForCausalLM.from_pretrained(
                 llama_model,
                 torch_dtype=torch.float32,
-            ).cuda()
+            )
 
         for _, param in self.llama_model.named_parameters():
             param.requires_grad = False
@@ -825,8 +825,8 @@ def compile_llama(
     is_first_llama = False
     if inputs_embeds is not None:
         is_first_llama = True
-        extended_model_name = "first_llama_fp16_cuda_padding_170"
-        vmfb_path = "first_llama_fp16_cuda_padding_170.vmfb"
+        extended_model_name = "first_llama_fp16_cpu_padding_170_prashant_fx_latest"
+        vmfb_path = "first_llama_fp16_cpu_padding_170_prashant_fx_latest.vmfb"
         inputs_embeds_placeholder = TensorPlaceholder.like(
             inputs_embeds, dynamic_axes=[1]
         )
@@ -887,21 +887,21 @@ def compile_llama(
         # example_inputs = [input_ids, position_ids, attention_mask_placeholder, *past_key_value_placeholder]
 
     args.load_vmfb = True
-    # if args.load_vmfb:
-    #     if os.path.isfile(vmfb_path):
-    #         print(f"loading existing vmfb from: {vmfb_path}")
-    #         llama_list.append(SharkInference(
-    #             None,
-    #             device="cuda",
-    #             mlir_dialect="tm_tensor",
-    #         ))
-    #         address = id(llama_list[0])
+    if args.load_vmfb:
+        if os.path.isfile(vmfb_path):
+            print(f"loading existing vmfb from: {vmfb_path}")
+            llama_list.append(SharkInference(
+                None,
+                device="cpu",
+                mlir_dialect="tm_tensor",
+            ))
+            address = id(llama_list[0])
 
-    #         # Access the value at the memory address using c_long
-    #         value = ctypes.c_long.from_address(address).value
-    #         print("Reference count within compilation = ", value)
-    #         llama_list[0].load_module(vmfb_path, extra_args=[])
-    #         return
+            # Access the value at the memory address using c_long
+            value = ctypes.c_long.from_address(address).value
+            print("Reference count within compilation = ", value)
+            llama_list[0].load_module(vmfb_path, extra_args=[])
+            return
     if is_fp16:
         mlir_module, _ = import_with_fx(
             model=llama_model,
@@ -912,31 +912,35 @@ def compile_llama(
             model_name=extended_model_name,
         )
         #######################################
-        return mlir_module
-        if os.path.isfile(vmfb_path):
-            print(f"loading existing vmfb from: {vmfb_path}")
-            llama_list.append(SharkInference(
-                None,
-                device="cuda",
-                mlir_dialect="tm_tensor",
-            ))
-            address = id(llama_list[0])
+        # return mlir_module
+        # if os.path.isfile(vmfb_path):
+        #     print(f"loading existing vmfb from: {vmfb_path}")
+        #     llama_list.append(SharkInference(
+        #         None,
+        #         device="cuda",
+        #         mlir_dialect="tm_tensor",
+        #     ))
+        #     address = id(llama_list[0])
 
-            # Access the value at the memory address using c_long
-            value = ctypes.c_long.from_address(address).value
-            print("Reference count within compilation = ", value)
-            llama_list[0].load_module(vmfb_path, extra_args=[])
-            return mlir_module
+        #     # Access the value at the memory address using c_long
+        #     value = ctypes.c_long.from_address(address).value
+        #     print("Reference count within compilation = ", value)
+        #     llama_list[0].load_module(vmfb_path, extra_args=[])
+        #     return mlir_module
         ########################################
         print("torch-mlir compiled.")
-        # from contextlib import redirect_stdout
-        # with open(extended_model_name+'_elided.mlir', 'w') as f:
-        #    with redirect_stdout(f):
-        #         print(mlir_module.operation.get_asm(large_elements_limit=4))
-        # print("Elided IR written")
+        from contextlib import redirect_stdout
+        with open(extended_model_name+'_elided.mlir', 'w') as f:
+           with redirect_stdout(f):
+                print(mlir_module.operation.get_asm(large_elements_limit=4))
+        print("Elided IR written")
+        with open(extended_model_name+'.mlir', 'w') as f:
+           with redirect_stdout(f):
+                print(mlir_module.operation.get_asm())
+        print("Complete IR written")
         shark_module = SharkInference(
             mlir_module,
-            device="cuda",
+            device="cpu",
             mlir_dialect="tm_tensor",
         )
         print("Shark module complete.")
@@ -1095,7 +1099,7 @@ def compile_llama(
     bytecode = bytecode_stream.getvalue()
 
     shark_module = SharkInference(
-        mlir_module=bytecode, device="cuda", mlir_dialect="tm_tensor"
+        mlir_module=bytecode, device="cpu", mlir_dialect="tm_tensor"
     )
     shark_module = _compile_module(shark_module, extended_model_name, [])
     return shark_module
@@ -1131,9 +1135,9 @@ class Chat:
         if isPyTorchVariant:
             llama_list.append(self.first_llama_model)
             return
-        inputs_embeds = torch.ones((1,170, 4096), dtype=torch.float32).cuda().half()
-        position_ids = torch.ones((1,170), dtype=torch.int64).cuda()
-        attention_mask = torch.ones((1,170), dtype=torch.int32).cuda()
+        inputs_embeds = torch.ones((1,170, 4096), dtype=torch.float32)
+        position_ids = torch.ones((1,170), dtype=torch.int64)
+        attention_mask = torch.ones((1,170), dtype=torch.int32)
         # inputs = (inputs_embeds, position_ids, attention_mask,)
         # print("Going to compile First Llama")
         # # resnet18 = models.resnet18(pretrained=True).to("cuda").half()
@@ -1151,8 +1155,8 @@ class Chat:
         # print("Mean = ", torch.mean(orig_out).item())
         # # print("fp16 output ", orig_out)
 
-        self.first_llama_model.model = self.first_llama_model.model.to("cuda").half()
-        ret = compile_llama(self.first_llama_model, inputs_embeds=inputs_embeds, position_ids=position_ids, attention_mask=attention_mask, llama_list=llama_list, is_fp16=is_fp16)
+        # self.first_llama_model.model = self.first_llama_model.model.to("cuda").half()
+        compile_llama(self.first_llama_model, inputs_embeds=inputs_embeds, position_ids=position_ids, attention_mask=attention_mask, llama_list=llama_list, is_fp16=is_fp16)
         print("Compilation complete for First llama. You may check .mlir and .vmfb files")
         return ret
         # return first_llama_model_shark
@@ -1337,14 +1341,14 @@ class Chat:
             outputs_logits = outputs[0]
             next_token_logits = outputs_logits[:, -1, :]
             # out = fx_g(*inputs)[0][:,-1,:]
-            print("fp16 vmfb output :-\n")
-            print(next_token_logits, "\n\t", next_token_logits.shape)
-            print("Min = ", torch.min(next_token_logits).item())
-            print("Max = ", torch.max(next_token_logits).item())
-            print("Mean = ", torch.mean(next_token_logits).item())
+            # print("fp16 vmfb output :-\n")
+            # print(next_token_logits, "\n\t", next_token_logits.shape)
+            # print("Min = ", torch.min(next_token_logits).item())
+            # print("Max = ", torch.max(next_token_logits).item())
+            # print("Mean = ", torch.mean(next_token_logits).item())
 
-            print("Close ? ",torch.allclose(tensor1, next_token_logits, rtol=1e-4, atol=1e-4))
-            break
+            # print("Close ? ",torch.allclose(tensor1, next_token_logits, rtol=1e-4, atol=1e-4))
+            # break
             if is_fp16:
                 next_token_logits = next_token_logits.to(torch.float32)
             # import pdb

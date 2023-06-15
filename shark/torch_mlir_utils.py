@@ -66,6 +66,7 @@ def get_torch_mlir_module(
     mlir_type: str = "linalg",
 ):
     """Get the MLIR's linalg-on-tensors module from the torchscipt module."""
+    print("DB - 1?")
     ignore_traced_shapes = False
     if dynamic:
         input = create_dynamic_placeholders(input)
@@ -84,11 +85,16 @@ def get_torch_mlir_module(
 
     if return_str:
         return mlir_module.operation.get_asm()
+    print("torch-mlir compilation successful")
     from contextlib import redirect_stdout
-    with open('with_prashant_transform_fx_fp16.mlir', 'w') as f:
+    with open('second_llama_fp16_cpu_padding_170_prashant_fx_latest_elided.mlir', 'w') as f:
         with redirect_stdout(f):
             print(mlir_module.operation.get_asm(large_elements_limit=4))
     print("Elided IR written")
+    with open('second_llama_fp16_cpu_padding_170_prashant_fx_latest.mlir', 'w') as f:
+        with redirect_stdout(f):
+            print(mlir_module.operation.get_asm())
+    print("Complete IR written")
     bytecode_stream = io.BytesIO()
     mlir_module.operation.write_bytecode(bytecode_stream)
     bytecode = bytecode_stream.getvalue()

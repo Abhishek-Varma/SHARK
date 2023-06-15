@@ -441,8 +441,8 @@ def transform_fx(fx_g):
                     new_node.args = (node,)
 
     fx_g.graph.lint()
-    del env
-    del args_iter
+    # del env
+    # del args_iter
     # import sys
     # sys.exit()
 
@@ -544,12 +544,12 @@ def import_with_fx(
 
     strip_overloads(fx_g)
 
-    print("FX-G output fp32 :-\n")
-    out = fx_g(*inputs)[0][:,-1,:]
-    print(out, "\n\t", out.shape)
-    print("Min = ", torch.min(out).item())
-    print("Max = ", torch.max(out).item())
-    print("Mean = ", torch.mean(out).item())
+    # print("FX-G output fp32 :-\n")
+    # out = fx_g(*inputs)[0][:,-1,:]
+    # print(out, "\n\t", out.shape)
+    # print("Min = ", torch.min(out).item())
+    # print("Max = ", torch.max(out).item())
+    # print("Mean = ", torch.mean(out).item())
     if is_f16:
         # print("\n\nFX-G output fp16 with cast :-\n")
         # out = fx_g(*inputs)[0][:,-1,:].to(torch.float16)
@@ -576,7 +576,7 @@ def import_with_fx(
         change_fx_graph_return_to_tuple(fx_g)
         inputs = flatten_training_input(inputs)
 
-    return fx_g, inputs
+    # return fx_g, inputs
     ts_graph = torch.jit.script(fx_g)
     mlir_importer = SharkImporter(
         ts_graph,
@@ -596,5 +596,6 @@ def import_with_fx(
         )
         return mlir_module, func_name
 
+    print("Here?")
     mlir_module, func_name = mlir_importer.import_mlir()
     return mlir_module, func_name
