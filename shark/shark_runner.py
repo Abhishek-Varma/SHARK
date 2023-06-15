@@ -52,6 +52,10 @@ class SharkRunner:
     mlir_dialect: str
         The dialect in which the given mlir_module is in.
         Refer to {https://mlir.llvm.org/docs/Dialects/}
+    mmap: bool
+        Whether to load/run vmfb using mmap. It's `True` by default.
+        When `True` - `iree_compilation_module` would contain the mmap'd vmfb
+                    - `context` and `haldevice` would be not `None`.
 
     Methods
     -------
@@ -72,6 +76,7 @@ class SharkRunner:
         extra_args: list = [],
         compile_vmfb: bool = True,
         device_idx: int = None,
+        mmap: bool = True,
     ):
         self.mlir_module = mlir_module
         self.device = shark_args.device if device == "none" else device
@@ -83,17 +88,23 @@ class SharkRunner:
             print(device_driver_info(self.device))
             sys.exit(1)
 
+        self.mmap = mmap
         if compile_vmfb == True:
             # Compile the module to get the .vmfb.
             (
                 self.iree_compilation_module,
                 self.iree_config,
+                self.context,
+                self.haldevice,
             ) = get_iree_compiled_module(
                 self.mlir_module,
                 self.device,
                 self.mlir_dialect,
                 extra_args=self.extra_args,
                 device_idx=self.device_idx,
+                # Setting mmap to False if compile_vmfb is set to True.
+                # This is temporary solution to avoid using temporary file path.
+                mmap=False,
             )
 
     def run(self, function_name, inputs: tuple, send_to_host=False):
@@ -104,6 +115,9 @@ class SharkRunner:
             self.iree_config,
             self.mlir_dialect,
             send_to_host,
+            mmap=self.mmap,
+            context=self.context,
+            haldevice=self.haldevice,
         )
 
     # Get all function names defined within the compiled module.

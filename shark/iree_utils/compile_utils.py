@@ -19,6 +19,7 @@ from shark.parser import shark_args
 import numpy as np
 import os
 import re
+import tempfile
 
 
 # Get the iree-compile arguments given device.
@@ -175,8 +176,10 @@ def compile_benchmark_dirs(bench_dir, device, dispatch_benchmarks):
                         vmfb_file.close()
 
                         config = get_iree_runtime_config(device)
-                        vm_module = ireert.VmModule.from_flatbuffer(
-                            config.vm_instance, flatbuffer_blob
+                        vm_module = ireert.VmModule.from_buffer(
+                            config.vm_instance,
+                            flatbuffer_blob,
+                            warn_if_copy=False,
                         )
 
                         benchmark_cl = build_benchmark_args_non_tensor_input(
@@ -307,13 +310,60 @@ def get_iree_module(flatbuffer_blob, device, device_idx=None):
         config = ireert.Config(device=haldevice)
     else:
         config = get_iree_runtime_config(device)
-    vm_module = ireert.VmModule.from_flatbuffer(
-        config.vm_instance, flatbuffer_blob
+    vm_module = ireert.VmModule.from_buffer(
+        config.vm_instance, flatbuffer_blob, warn_if_copy=False
     )
     ctx = ireert.SystemContext(config=config)
     ctx.add_vm_module(vm_module)
     ModuleCompiled = getattr(ctx.modules, vm_module.name)
     return ModuleCompiled, config
+
+
+def load_vmfb_using_mmap(
+    flatbuffer_blob_or_path, device: str, device_idx: int = None
+):
+    instance = ireert.VmInstance()
+    device = iree_device_map(device)
+    haldriver = ireert.get_driver(device)
+    haldevice = haldriver.create_device_by_uri(
+        device,
+        allocators=[],
+    )
+    hal_module = ireert.create_hal_module(instance, haldevice)
+    # First get configs.
+    if device_idx is not None:
+        device = iree_device_map(device)
+        print("registering device id: ", device_idx)
+        haldriver = ireert.get_driver(device)
+
+        haldevice = haldriver.create_device(
+            haldriver.query_available_devices()[device_idx]["device_id"],
+            allocators=shark_args.device_allocator,
+        )
+        config = ireert.Config(device=haldevice)
+    else:
+        config = get_iree_runtime_config(device)
+    # Now load vmfb.
+    # Two scenarios we have here :-
+    #      1. We either have the vmfb already saved and therefore pass the path of it.
+    #         (This would arise if we're invoking `load_module` from a SharkInference obj)
+    #   OR 2. We are compiling on the fly, therefore we have the flatbuffer blob to play with.
+    #         (This would arise if we're invoking `compile` from a SharkInference obj)
+    if (
+        isinstance(flatbuffer_blob_or_path, str)
+        and ".vmfb" in flatbuffer_blob_or_path
+    ):
+        vmfb_file_path = flatbuffer_blob_or_path
+        mmaped_vmfb = ireert.VmModule.mmap(instance, flatbuffer_blob_or_path)
+        context = ireert.VmContext(instance, modules=[hal_module, mmaped_vmfb])
+    else:
+        with tempfile.NamedTemporaryFile(delete=False) as tf:
+            tf.write(flatbuffer_blob_or_path)
+            tf.flush()
+            vmfb_file_path = tf.name
+        mmaped_vmfb = ireert.VmModule.mmap(instance, vmfb_file_path)
+        context = ireert.VmContext(instance, modules=[hal_module, mmaped_vmfb])
+    return mmaped_vmfb, config, context, haldevice
 
 
 def get_iree_compiled_module(
@@ -323,19 +373,49 @@ def get_iree_compiled_module(
     model_config_path: str = None,
     extra_args: list = [],
     device_idx: int = None,
+    mmap: bool = True,
 ):
     """Given a module returns the compiled .vmfb and configs"""
     flatbuffer_blob = compile_module_to_flatbuffer(
         module, device, frontend, model_config_path, extra_args
     )
-    return get_iree_module(flatbuffer_blob, device, device_idx=device_idx)
+    print(
+        "Device from get_iree_compiled_module = ",
+        device,
+        " device_idx = ",
+        device_idx,
+    )
+    # TODO: Uncomment the mmap block later. This is a temporary workaround for
+    #       not dealing with temporary files.
+    # if mmap:
+    #     return load_vmfb_using_mmap(flatbuffer_blob, device, device_idx)
+    # TODO: Returning of `None` is quite an ugly/hacky-way - will make it better in subsequent iteration.
+    return (
+        *get_iree_module(flatbuffer_blob, device, device_idx=device_idx),
+        None,
+        None,
+    )
 
 
-def load_flatbuffer(flatbuffer_path: str, device: str, device_idx: int = None):
+def load_flatbuffer(
+    flatbuffer_path: str,
+    device: str,
+    device_idx: int = None,
+    mmap: bool = True,
+):
+    print(
+        "Device from load_flatbuffer = ", device, " device_idx = ", device_idx
+    )
+    if mmap:
+        return load_vmfb_using_mmap(flatbuffer_path, device, device_idx)
     with open(os.path.join(flatbuffer_path), "rb") as f:
         flatbuffer_blob = f.read()
-
-    return get_iree_module(flatbuffer_blob, device, device_idx=device_idx)
+    # TODO: Returning of `None` is quite an ugly/hacky-way - will make it better in subsequent iteration.
+    return (
+        *get_iree_module(flatbuffer_blob, device, device_idx=device_idx),
+        None,
+        None,
+    )
 
 
 def export_iree_module_to_vmfb(
@@ -384,10 +464,18 @@ def get_results(
     config,
     frontend="torch",
     send_to_host=True,
+    mmap=True,
+    context=None,
+    haldevice=None,
 ):
     """Runs a .vmfb file given inputs and config and returns output."""
-    device_inputs = [ireert.asdevicearray(config.device, a) for a in input]
-    result = compiled_vm[function_name](*device_inputs)
+    if mmap:
+        f = compiled_vm.lookup_function(function_name)
+        finv = ireert.FunctionInvoker(context, haldevice, f, tracer=None)
+        result = finv(*input)
+    else:
+        device_inputs = [ireert.asdevicearray(config.device, a) for a in input]
+        result = compiled_vm[function_name](*device_inputs)
     result_tensors = []
     if isinstance(result, tuple):
         if send_to_host:
