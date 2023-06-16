@@ -549,6 +549,7 @@ def import_with_fx(
 
     if is_f16:
         fx_g = fx_g.half()
+        # print(fx_g)
         transform_fx(fx_g)
         # TODO: Have to make it more generic.
         add_upcast(fx_g)

@@ -78,6 +78,7 @@ class SharkRunner:
         self.mlir_dialect = mlir_dialect
         self.extra_args = extra_args
         self.device_idx = device_idx
+        print("Device inside SharkRunner - ", self.device)
 
         if check_device_drivers(self.device):
             print(device_driver_info(self.device))

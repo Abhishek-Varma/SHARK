@@ -196,6 +196,7 @@ class SharkInference:
 
     # load and return the module.
     def load_module(self, path, extra_args=[]):
+        print("Device inside load_module = ", self.device)
         self.shark_runner = SharkRunner(
             device=self.device,
             compile_vmfb=False,

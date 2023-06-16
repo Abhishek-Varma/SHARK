@@ -17,6 +17,7 @@ def get_vmfb_from_path(vmfb_path, device, mlir_dialect):
         return None
 
     print("Loading vmfb from: ", vmfb_path)
+    print("Device from get_vmfb_from_path - ", device)
     shark_module = SharkInference(
         None, device=device, mlir_dialect=mlir_dialect
     )
