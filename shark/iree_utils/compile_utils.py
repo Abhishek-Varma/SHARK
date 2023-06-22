@@ -329,7 +329,6 @@ def load_vmfb_using_mmap(
         device,
         allocators=[],
     )
-    hal_module = ireert.create_hal_module(instance, haldevice)
     # First get configs.
     if device_idx is not None:
         device = iree_device_map(device)
@@ -349,21 +348,24 @@ def load_vmfb_using_mmap(
     #         (This would arise if we're invoking `load_module` from a SharkInference obj)
     #   OR 2. We are compiling on the fly, therefore we have the flatbuffer blob to play with.
     #         (This would arise if we're invoking `compile` from a SharkInference obj)
+    temp_file_to_unlink = None
     if (
         isinstance(flatbuffer_blob_or_path, str)
         and ".vmfb" in flatbuffer_blob_or_path
     ):
         vmfb_file_path = flatbuffer_blob_or_path
         mmaped_vmfb = ireert.VmModule.mmap(instance, flatbuffer_blob_or_path)
-        context = ireert.VmContext(instance, modules=[hal_module, mmaped_vmfb])
+        ctx = ireert.SystemContext(config=config)
+        ctx.add_vm_module(mmaped_vmfb)
+        mmaped_vmfb = getattr(ctx.modules, mmaped_vmfb.name)
     else:
         with tempfile.NamedTemporaryFile(delete=False) as tf:
             tf.write(flatbuffer_blob_or_path)
             tf.flush()
             vmfb_file_path = tf.name
+        temp_file_to_unlink = vmfb_file_path
         mmaped_vmfb = ireert.VmModule.mmap(instance, vmfb_file_path)
-        context = ireert.VmContext(instance, modules=[hal_module, mmaped_vmfb])
-    return mmaped_vmfb, config, context, haldevice
+    return mmaped_vmfb, config, temp_file_to_unlink
 
 
 def get_iree_compiled_module(
@@ -373,49 +375,58 @@ def get_iree_compiled_module(
     model_config_path: str = None,
     extra_args: list = [],
     device_idx: int = None,
-    mmap: bool = True,
+    mmap: bool = False,
 ):
     """Given a module returns the compiled .vmfb and configs"""
     flatbuffer_blob = compile_module_to_flatbuffer(
         module, device, frontend, model_config_path, extra_args
     )
-    print(
-        "Device from get_iree_compiled_module = ",
-        device,
-        " device_idx = ",
-        device_idx,
-    )
-    # TODO: Uncomment the mmap block later. This is a temporary workaround for
-    #       not dealing with temporary files.
-    # if mmap:
-    #     return load_vmfb_using_mmap(flatbuffer_blob, device, device_idx)
-    # TODO: Returning of `None` is quite an ugly/hacky-way - will make it better in subsequent iteration.
-    return (
-        *get_iree_module(flatbuffer_blob, device, device_idx=device_idx),
-        None,
-        None,
-    )
+    temp_file_to_unlink = None
+    # TODO: Currently mmap=True control flow path has been switched off for mmap.
+    #       Got to find a cleaner way to unlink/delete the temporary file since
+    #       we're setting delete=False when creating NamedTemporaryFile. That's why
+    #       I'm getting hold of the name of the temporary file in `temp_file_to_unlink`.
+    if mmap:
+        print(f"Will load the compiled module as a mmapped temporary file")
+        vmfb, config, temp_file_to_unlink = load_vmfb_using_mmap(
+            flatbuffer_blob, device, device_idx
+        )
+    else:
+        vmfb, config = get_iree_module(
+            flatbuffer_blob, device, device_idx=device_idx
+        )
+    ret_params = {
+        "vmfb": vmfb,
+        "config": config,
+        "temp_file_to_unlink": temp_file_to_unlink,
+    }
+    return ret_params
 
 
 def load_flatbuffer(
     flatbuffer_path: str,
     device: str,
     device_idx: int = None,
-    mmap: bool = True,
+    mmap: bool = False,
 ):
-    print(
-        "Device from load_flatbuffer = ", device, " device_idx = ", device_idx
-    )
+    temp_file_to_unlink = None
     if mmap:
-        return load_vmfb_using_mmap(flatbuffer_path, device, device_idx)
-    with open(os.path.join(flatbuffer_path), "rb") as f:
-        flatbuffer_blob = f.read()
-    # TODO: Returning of `None` is quite an ugly/hacky-way - will make it better in subsequent iteration.
-    return (
-        *get_iree_module(flatbuffer_blob, device, device_idx=device_idx),
-        None,
-        None,
-    )
+        print(f"Loading flatbuffer at {flatbuffer_path} as a mmapped file")
+        vmfb, config, temp_file_to_unlink = load_vmfb_using_mmap(
+            flatbuffer_path, device, device_idx
+        )
+    else:
+        with open(os.path.join(flatbuffer_path), "rb") as f:
+            flatbuffer_blob = f.read()
+        vmfb, config = get_iree_module(
+            flatbuffer_blob, device, device_idx=device_idx
+        )
+    ret_params = {
+        "vmfb": vmfb,
+        "config": config,
+        "temp_file_to_unlink": temp_file_to_unlink,
+    }
+    return ret_params
 
 
 def export_iree_module_to_vmfb(
@@ -464,18 +475,10 @@ def get_results(
     config,
     frontend="torch",
     send_to_host=True,
-    mmap=True,
-    context=None,
-    haldevice=None,
 ):
     """Runs a .vmfb file given inputs and config and returns output."""
-    if mmap:
-        f = compiled_vm.lookup_function(function_name)
-        finv = ireert.FunctionInvoker(context, haldevice, f, tracer=None)
-        result = finv(*input)
-    else:
-        device_inputs = [ireert.asdevicearray(config.device, a) for a in input]
-        result = compiled_vm[function_name](*device_inputs)
+    device_inputs = [ireert.asdevicearray(config.device, a) for a in input]
+    result = compiled_vm[function_name](*device_inputs)
     result_tensors = []
     if isinstance(result, tuple):
         if send_to_host:

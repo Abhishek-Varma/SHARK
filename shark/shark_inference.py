@@ -126,7 +126,6 @@ class SharkInference:
                 self.mlir_dialect,
                 extra_args=extra_args,
                 device_idx=self.device_idx,
-                mmap=self.mmap,
             )
 
         if self.dispatch_benchmarks is not None:
@@ -205,17 +204,15 @@ class SharkInference:
             device=self.device,
             compile_vmfb=False,
             extra_args=extra_args,
-            mmap=self.mmap,
         )
-        (
-            self.shark_runner.iree_compilation_module,
-            self.shark_runner.iree_config,
-            self.shark_runner.context,
-            self.shark_runner.haldevice,
-        ) = load_flatbuffer(
+        params = load_flatbuffer(
             path,
             self.device,
             self.device_idx,
             mmap=self.mmap,
         )
+        self.shark_runner.iree_compilation_module = params["vmfb"]
+        self.shark_runner.iree_config = params["config"]
+        self.shark_runner.temp_file_to_unlink = params["temp_file_to_unlink"]
+        del params
         return
