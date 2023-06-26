@@ -317,6 +317,59 @@ def add_upcast(fx_g):
     import torch
 
     for node in fx_g.graph.nodes:
+        # if node.target in [torch.ops.aten.add]:
+        #     if (
+        #         hasattr(node.args[0], "target") and
+        #         node.args[0].target in [torch.ops.aten.mul] and
+        #         hasattr(node.args[0].args[1], "target") and
+        #         node.args[0].args[1].target in [torch.ops.aten.div_]
+        #     ):
+        #         print("Found the new block")
+        #         add_node = node
+        #         mul_node = node.args[0]
+        #         div_node = node.args[0].args[1]
+        #         with fx_g.graph.inserting_before(add_node):
+        #             new_node = fx_g.graph.call_function(
+        #                 torch.ops.aten._to_copy,
+        #                 args=(add_node,),
+        #                 kwargs={"dtype": torch.float16},
+        #             )
+        #             add_node.append(new_node)
+        #             add_node.replace_all_uses_with(new_node)
+        #             new_node.args = (add_node,)
+        #             new_node.kwargs = {"dtype": torch.float16}
+
+    #     %unsqueeze : [num_users=1] = call_function[target=torch.ops.aten.unsqueeze](args = (%slice_3, 1), kwargs = {})
+    # %unsqueeze_1 : [num_users=1] = call_function[target=torch.ops.aten.unsqueeze](args = (%unsqueeze, 2), kwargs = {})
+    # %slice_4 : [num_users=1] = call_function[target=torch.ops.aten.slice](args = (%unsqueeze_1, 3, 0, 9223372036854775807), kwargs = {})
+    # %rsub : [num_users=1] = call_function[target=torch.ops.aten.rsub](args = (%slice_4, 1.0), kwargs = {})
+    # %mul_2 : [num_users=12] = call_function[target=torch.ops.aten.mul](args = (%rsub, -10000.0), kwargs = {})
+
+        # if node.target in [torch.ops.aten.mul]:
+        #     if (
+        #         hasattr(node.args[0], "target") and
+        #         node.args[0].target in [torch.ops.aten.rsub] and
+        #         hasattr(node.args[0].args[0], "target") and
+        #         node.args[0].args[0].target in [torch.ops.aten.slice] and
+        #         hasattr(node.args[0].args[0].args[0], "target") and
+        #         node.args[0].args[0].args[0].target in [torch.ops.aten.unsqueeze] and
+        #         hasattr(node.args[0].args[0].args[0].args[0], "target") and
+        #         node.args[0].args[0].args[0].args[0].target in [torch.ops.aten.unsqueeze]
+        #     ):
+        #         print("Found the ugly block")
+        #         mul_node = node
+        #         with fx_g.graph.inserting_before(mul_node):
+        #             new_node = fx_g.graph.call_function(
+        #                 torch.ops.aten._to_copy,
+        #                 args=(mul_node,),
+        #                 kwargs={"dtype": torch.float16},
+        #             )
+        #             mul_node.append(new_node)
+        #             mul_node.replace_all_uses_with(new_node)
+        #             new_node.args = (mul_node,)
+        #             new_node.kwargs = {"dtype": torch.float16}
+
+
         if node.target in [torch.ops.aten.mul]:
             # This is a very strict check.
             if hasattr(node.args[1], "target"):
@@ -370,9 +423,17 @@ def transform_fx(fx_g):
                 torch.ops.aten.arange,
                 torch.ops.aten.empty,
                 torch.ops.aten.zeros,
+                torch.ops.aten.ones,
             ]:
                 if node.kwargs.get("dtype") == torch.float32:
                     node.kwargs = kwargs_dict
+
+            if node.target in [torch.ops.aten.ones]:
+                node.kwargs = {
+                    "dtype": torch.float16,
+                    "device": torch.device(type="cuda"),
+                    "pin_memory": False,
+                }
 
             # Vicuna
             if node.target in [
@@ -547,23 +608,63 @@ def import_with_fx(
 
     strip_overloads(fx_g)
 
+    
+    print("OUTPUT before fx transformation is :")
+    print(fx_g(*inputs))
+    print("----------")
     if is_f16:
         fx_g = fx_g.half()
-        # print(fx_g)
+        print("OUTPUT after half :")
+        # fx_g = fx_g.cuda()
+        # fx_g.recompile()
+        inputs = get_f16_inputs(inputs, is_f16, f16_input_mask)
+        # new_input = [inp.to("cuda") for inp in inputs]
+        # # print(fx_g(*new_input))
+
+        # from contextlib import redirect_stdout
+        # with open('qformer_fx_g_half.mlir', 'w') as f:
+        #     with redirect_stdout(f):
+        #         print(fx_g.graph)
+
         transform_fx(fx_g)
+        # fx_g.recompile()
+        # print("OUTPUT after transform :")
+        # fx_g = fx_g.cuda()
+        # print(fx_g(*new_input))
+
         # TODO: Have to make it more generic.
+        # with open('qformer_fx_2.mlir', 'w') as f:
+        #     with redirect_stdout(f):
+        #         print(fx_g.graph)
+
         add_upcast(fx_g)
+        # fx_g.recompile()
+        # print("OUTPUT after upcast :")
+        # fx_g = fx_g.cuda()
+        # print(fx_g(*new_input))
+
+        # with open('qformer_fx_g_without_my_change.mlir', 'w') as f:
+        #     with redirect_stdout(f):
+        #         print(fx_g.graph) 
         fx_g.recompile()
 
+    print("Success till here")
+    # print("OUTPUT after recompile is :")
+    # fx_g = fx_g.cuda()
+    # print(fx_g(*new_input))
+    return fx_g, inputs
     if training:
         change_fx_graph_return_to_tuple(fx_g)
         inputs = flatten_training_input(inputs)
 
     ts_graph = torch.jit.script(fx_g)
+    with open('qformer_ts_graph_without_my_change.mlir', 'w') as f:
+        with redirect_stdout(f):
+            print(ts_graph.graph)
     if mlir_type == "torchscript":
         return ts_graph
 
-    inputs = get_f16_inputs(inputs, is_f16, f16_input_mask)
+    
     mlir_importer = SharkImporter(
         ts_graph,
         inputs,

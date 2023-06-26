@@ -288,6 +288,7 @@ class MiniGPT4BaseModel(torch.nn.Module):
         self.Qformer.cls = None
         self.Qformer.bert.embeddings.word_embeddings = None
         self.Qformer.bert.embeddings.position_embeddings = None
+        # self.Qformer.bert.to("cuda")
         for layer in self.Qformer.bert.encoder.layer:
             layer.output = None
             layer.intermediate = None
@@ -302,6 +303,7 @@ class MiniGPT4BaseModel(torch.nn.Module):
             # logging.info("freeze Qformer")
         print('Loading Q-Former Done')
 
+        return
         print("Llama = ", llama_model)
         self.llama_tokenizer = LlamaTokenizer.from_pretrained(llama_model, use_fast=False)
         self.llama_tokenizer.pad_token = self.llama_tokenizer.eos_token

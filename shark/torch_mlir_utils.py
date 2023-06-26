@@ -20,6 +20,8 @@ from shark.parser import shark_args
 import io
 
 mlir_type_mapping_dict = {
+    "raw": torch_mlir.OutputType.RAW,
+    "torch": torch_mlir.OutputType.TORCH,
     "linalg": torch_mlir.OutputType.LINALG_ON_TENSORS,
     "stablehlo": torch_mlir.OutputType.STABLEHLO,
     "tosa": torch_mlir.OutputType.TOSA,
@@ -74,14 +76,38 @@ def get_torch_mlir_module(
 
     tempfile.tempdir = "."
 
-    mlir_module = torch_mlir.compile(
+    mlir_module_raw = torch_mlir.compile(
+        module,
+        input,
+        output_type=mlir_type_mapping_dict["raw"],
+        use_tracing=jit_trace,
+        ignore_traced_shapes=ignore_traced_shapes,
+    )
+    from contextlib import redirect_stdout
+    with open('qformer_raw.mlir', 'w') as f:
+        with redirect_stdout(f):
+            print(mlir_module_raw.operation.get_asm(large_elements_limit=4))
+    mlir_module_torch = torch_mlir.compile(
+        module,
+        input,
+        output_type=mlir_type_mapping_dict["torch"],
+        use_tracing=jit_trace,
+        ignore_traced_shapes=ignore_traced_shapes,
+    )
+    with open('qformer_torch_without_my_change.mlir', 'w') as f:
+        with redirect_stdout(f):
+            print(mlir_module_torch.operation.get_asm(large_elements_limit=4))
+    mlir_module_linalg = torch_mlir.compile(
         module,
         input,
         output_type=mlir_type_mapping_dict[mlir_type],
         use_tracing=jit_trace,
         ignore_traced_shapes=ignore_traced_shapes,
     )
-
+    with open('qformer_linalg.mlir', 'w') as f:
+        with redirect_stdout(f):
+            print(mlir_module_linalg.operation.get_asm(large_elements_limit=4))
+    mlir_module = mlir_module_linalg
     if return_str:
         return mlir_module.operation.get_asm()
     bytecode_stream = io.BytesIO()
