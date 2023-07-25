@@ -23,6 +23,7 @@ past_key_values = None
 model_map = {
     "llama2_7b": "meta-llama/Llama-2-7b-chat-hf",
     "llama2_70b": "meta-llama/Llama-2-70b-chat-hf",
+    "freewilly2": "stabilityai/FreeWilly2",
     "codegen": "Salesforce/codegen25-7b-multi",
     "vicuna1p3": "lmsys/vicuna-7b-v1.3",
     "vicuna": "TheBloke/vicuna-7B-1.1-HF",
@@ -48,6 +49,10 @@ start_message = {
         "in nature. If a question does not make any sense, or is not factually coherent, "
         "explain why instead of answering something not correct. If you don't know the "
         "answer to a question, please don't share false information."
+    ),
+    "freewilly2": (
+        "### System:\nYou are Free Willy, an AI that follows instructions extremely well. "
+        "Help as much as you can. Remember, be safe, and don't do anything illegal.\n\n"
     ),
     "StableLM": (
         "<|SYSTEM|># StableLM Tuned (Alpha version)"
@@ -83,6 +88,7 @@ def create_prompt(model_name, history):
         "vicuna1p3",
         "llama2_7b",
         "llama2_70b",
+        "freewilly2"
     ]:
         conversation = "".join(
             [
@@ -118,6 +124,7 @@ def chat(curr_system_message, history, model, device, precision, cli=True):
         "codegen",
         "llama2_7b",
         "llama2_70b",
+        "freewilly2",
     ]:
         from apps.language_models.scripts.vicuna import (
             UnshardedVicuna,

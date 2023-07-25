@@ -111,7 +111,7 @@ parser.add_argument(
     "--model_name",
     type=str,
     default="vicuna",
-    choices=["vicuna", "llama2_7b", "llama2_70b"],
+    choices=["vicuna", "llama2_7b", "llama2_70b", "freewilly2"],
     help="Specify which model to run.",
 )
 parser.add_argument(
@@ -911,6 +911,8 @@ class UnshardedVicuna(SharkLLMBase):
             self.hf_model_path = "meta-llama/Llama-2-7b-chat-hf"
         elif self.model_name == "llama2_70b":
             self.hf_model_path = "meta-llama/Llama-2-70b-chat-hf"
+        elif self.model_name == "freewilly2":
+            self.hf_model_path = "stabilityai/FreeWilly2"
         print(f"[DEBUG] hf model name: {self.hf_model_path}")
         self.max_sequence_length = 256
         self.device = device
@@ -1626,6 +1628,8 @@ if __name__ == "__main__":
         )
     if args.model_name == "vicuna":
         system_message = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n"
+    elif args.model_name == "freewilly":
+        system_message = "### System:\nYou are Free Willy, an AI that follows instructions extremely well. Help as much as you can. Remember, be safe, and don't do anything illegal.\n\n"
     else:
         system_message = """System: You are a helpful, respectful and honest assistant. Always answer "
         as helpfully as possible, while being safe.  Your answers should not
@@ -1645,6 +1649,7 @@ if __name__ == "__main__":
         "vicuna": "vicuna=>TheBloke/vicuna-7B-1.1-HF",
         "llama2_7b": "llama2_7b=>meta-llama/Llama-2-7b-chat-hf",
         "llama2_70b": "llama2_70b=>meta-llama/Llama-2-70b-chat-hf",
+        "freewilly2": "freewilly2=>stabilityai/FreeWilly2",
     }
     while True:
         # TODO: Add break condition from user input

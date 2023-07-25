@@ -18,6 +18,9 @@ class FirstVicuna(torch.nn.Module):
         kwargs = {"torch_dtype": torch.float32}
         if "llama2" in model_name:
             kwargs["use_auth_token"] = hf_auth_token
+        if "freewilly2" in model_name:
+            kwargs = {"torch_dtype": torch.float32,
+                      "offload_folder":"offload"}
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path, low_cpu_mem_usage=True, **kwargs
         )
