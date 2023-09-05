@@ -33,6 +33,7 @@ from apps.stable_diffusion.src.utils import (
     end_profiling,
 )
 import sys
+import traceback
 
 SD_STATE_IDLE = "idle"
 SD_STATE_CANCEL = "cancel"
@@ -107,6 +108,9 @@ class StableDiffusionPipeline:
         self.text_encoder = None
 
     def load_unet(self):
+        import pdb
+        pdb.set_trace()
+        print("Here?")
         if self.unet is not None:
             return
 
@@ -114,6 +118,7 @@ class StableDiffusionPipeline:
             self.unet = self.sd_model.unet()
         else:
             try:
+                print("DB before get_unet")
                 self.unet = get_unet()
             except Exception as e:
                 print(e)
@@ -231,10 +236,16 @@ class StableDiffusionPipeline:
         latent_history = [latents]
         text_embeddings = torch.from_numpy(text_embeddings).to(dtype)
         text_embeddings_numpy = text_embeddings.detach().numpy()
-        if text_embeddings.shape[1] <= self.model_max_length:
-            self.load_unet()
-        else:
-            self.load_unet_512()
+        print("DB - 1")
+        try:
+            if text_embeddings.shape[1] <= self.model_max_length:
+                self.load_unet()
+            else:
+                self.load_unet_512()
+        except Exception as e:
+            traceback.print_exc()
+            print("Error manual: ", str(e))
+        print("DB - 2")
         for i, t in tqdm(enumerate(total_timesteps)):
             step_start_time = time.time()
             timestep = torch.tensor([t]).to(dtype).detach().numpy()

@@ -28,6 +28,7 @@ from ._common import iree_device_map, iree_target_map
 from .cpu_utils import get_iree_cpu_rt_args
 from .benchmark_utils import *
 
+import traceback
 
 # Get the iree-compile arguments given device.
 def get_iree_device_args(device, extra_args=[]):
@@ -357,6 +358,8 @@ def load_vmfb_using_mmap(
     flatbuffer_blob_or_path, device: str, device_idx: int = None
 ):
     print(f"Loading module {flatbuffer_blob_or_path}...")
+    import pdb
+    
     if "rocm" in device:
         device = "rocm"
     with DetailLogger(timeout=2.5) as dl:
@@ -403,7 +406,23 @@ def load_vmfb_using_mmap(
             dl.log(f"mmap {flatbuffer_blob_or_path}")
             ctx = ireert.SystemContext(config=config)
             dl.log(f"ireert.SystemContext created")
-            ctx.add_vm_module(mmaped_vmfb)
+            import psutil
+
+            # Get memory usage
+            memory_info = psutil.virtual_memory()
+            print(f"Total Memory: {memory_info.total / (1024 ** 3):.2f} GB")
+            print(f"Available Memory: {memory_info.available / (1024 ** 3):.2f} GB")
+            print(f"Used Memory: {memory_info.used / (1024 ** 3):.2f} GB")
+
+            # Get CPU usage
+            cpu_percent = psutil.cpu_percent(interval=1)  # 1-second interval
+            pdb.set_trace()
+            print(f"CPU Usage: {cpu_percent}%")
+            try:
+                ctx.add_vm_module(mmaped_vmfb)
+            except Exception as e:
+                print("Error2: ", str(e))
+                traceback.print_exc()
             dl.log(f"module initialized")
             mmaped_vmfb = getattr(ctx.modules, mmaped_vmfb.name)
         else:
