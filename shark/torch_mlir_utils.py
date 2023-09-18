@@ -82,27 +82,6 @@ def get_torch_mlir_module(
         ignore_traced_shapes=ignore_traced_shapes,
     )
 
-    # from contextlib import redirect_stdout
-
-    # mlir_file_path = os.path.join(
-    #     os.getcwd(), f"{extended_model_name}_linalg.mlir"
-    # )
-    # with open(mlir_file_path, "w") as f:
-    #     with redirect_stdout(f):
-    #         print(mlir_module.operation.get_asm())
-
-    from contextlib import redirect_stdout
-    with open("qformer_fp32.mlir", "w") as f:
-        with redirect_stdout(f):
-            print(mlir_module.operation.get_asm())
-    with open("qformer_fp32_elided.mlir", "w") as f:
-        with redirect_stdout(f):
-            print(mlir_module.operation.get_asm(large_elements_limit=4))
-
-    print("WROTE QFormer MODEL")
-    
-    import pdb
-    pdb.set_trace()
     if return_str:
         return mlir_module.operation.get_asm()
     bytecode_stream = io.BytesIO()
