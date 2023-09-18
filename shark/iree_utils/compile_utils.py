@@ -312,6 +312,9 @@ def compile_module_to_flatbuffer(
 
     # TODO: make it simpler.
     # Compile according to the input type, else just try compiling.
+    print("IREE args : ", str(args))
+    print("IREE target backend : ", str(iree_target_map(device)))
+    print("IREE input_type : ", str(input_type))
     if input_type != "":
         # Currently for MHLO/TOSA.
         flatbuffer_blob = ireec.compile_str(

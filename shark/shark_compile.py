@@ -184,34 +184,18 @@ def shark_compile_through_fx(
     if "cuda" in device:
         shark_args.enable_tf32 = True
 
-    if precision in ["int4", "int8"]:
-        mlir_module = compile_int_precision(
-            model,
-            inputs,
-            precision,
-            device,
-            generate_or_load_vmfb,
-            extended_model_name,
-        )
-        extra_args = [
-            "--iree-hal-dump-executable-sources-to=ies",
-            "--iree-vm-target-truncate-unsupported-floats",
-            "--iree-codegen-check-ir-before-llvm-conversion=false",
-            "--iree-vm-bytecode-module-output-format=flatbuffer-binary",
-        ]
-    else:
-        (
-            mlir_module,
-            _,
-        ) = import_with_fx(
-            model=model,
-            inputs=inputs,
-            is_f16=is_f16,
-            f16_input_mask=f16_input_mask,
-            debug=debug,
-            model_name=extended_model_name,
-            save_dir=save_dir,
-        )
+    (
+        mlir_module,
+        _,
+    ) = import_with_fx(
+        model=model,
+        inputs=inputs,
+        is_f16=is_f16,
+        f16_input_mask=f16_input_mask,
+        debug=debug,
+        model_name=extended_model_name,
+        save_dir=save_dir,
+    )
 
     shark_module = SharkInference(
         mlir_module,

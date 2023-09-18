@@ -34,7 +34,7 @@ class VisionModel(torch.nn.Module):
             weight_bit_width = 4 if precision == "int4" else 8
             quantize_model(
                 self.ln_vision,
-                dtype=torch.float32,
+                dtype=torch.float16,
                 weight_bit_width=weight_bit_width,
                 weight_param_method="stats",
                 weight_scale_precision="float",
@@ -49,7 +49,7 @@ class VisionModel(torch.nn.Module):
             )
             quantize_model(
                 self.visual_encoder,
-                dtype=torch.float32,
+                dtype=torch.float16,
                 weight_bit_width=weight_bit_width,
                 weight_param_method="stats",
                 weight_scale_precision="float",
@@ -90,7 +90,7 @@ class FirstLlamaModel(torch.nn.Module):
             weight_bit_width = 4 if precision == "int4" else 8
             quantize_model(
                 self.model,
-                dtype=torch.float32,
+                dtype=torch.float16,
                 weight_bit_width=weight_bit_width,
                 weight_param_method="stats",
                 weight_scale_precision="float",
@@ -154,7 +154,7 @@ class SecondLlamaModel(torch.nn.Module):
             weight_bit_width = 4 if precision == "int4" else 8
             quantize_model(
                 self.model,
-                dtype=torch.float32,
+                dtype=torch.float16,
                 weight_bit_width=weight_bit_width,
                 weight_param_method="stats",
                 weight_scale_precision="float",

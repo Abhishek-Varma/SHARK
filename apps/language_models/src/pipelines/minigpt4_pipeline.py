@@ -26,6 +26,7 @@ import os
 from PIL import Image
 import sys
 import requests
+import gc
 
 # SHARK dependencies
 from shark.shark_compile import (
@@ -107,6 +108,12 @@ parser.add_argument(
     default=300,
     help="Maximum no. of new tokens that can be generated for a query",
 )
+parser.add_argument(
+    "--cache_llama",
+    default=False,
+    action=argparse.BooleanOptionalAction,
+    help="For debugging purposes, creates a .mlir files and stores on disk",
+)
 
 
 def disabled_train(self, mode=True):
@@ -156,7 +163,7 @@ def quant〇matmul_rhs_group_quant〡has_value_semantics(lhs, rhs, rhs_scale, rh
     return
 
 
-brevitas_matmul_rhs_group_quant_library = [
+quant_matmul_rhs_group_quant_library = [
     quant〇matmul_rhs_group_quant〡shape,
     quant〇matmul_rhs_group_quant〡dtype,
     quant〇matmul_rhs_group_quant〡has_value_semantics]
@@ -199,11 +206,13 @@ def compile_module(
 
 
 def compile_int_precision(
-    model, inputs, precision, device, generate_vmfb, extended_model_name, debug=False
+    model, inputs, precision, f16_input_mask, device, generate_vmfb, extended_model_name, debug=False
 ):
     torchscript_module = import_with_fx(
         model,
         inputs,
+        is_f16=True,
+        f16_input_mask=f16_input_mask,
         precision=precision,
         mlir_type="torchscript",
     )
@@ -212,7 +221,7 @@ def compile_int_precision(
         inputs,
         output_type="torch",
         backend_legal_ops=["quant.matmul_rhs_group_quant"],
-        extra_library=brevitas_matmul_rhs_group_quant_library,
+        extra_library=quant_matmul_rhs_group_quant_library,
         use_tracing=False,
         verbose=False,
     )
@@ -292,6 +301,7 @@ def shark_compile_through_fx_int(
         model,
         inputs,
         precision,
+        f16_input_mask,
         device,
         generate_or_load_vmfb,
         extended_model_name,
@@ -586,6 +596,7 @@ class MiniGPT4(SharkLLMBase):
         _compile=False,
         vision_model_vmfb_path=Path("vision_model_fp16_cuda.vmfb"),
         qformer_vmfb_path=Path("qformer_fp32_cuda.vmfb"),
+        cache_llama=False,
     ) -> None:
         self.model_name = model_name
         self.shark_model = None
@@ -594,11 +605,17 @@ class MiniGPT4(SharkLLMBase):
         self.device = device
         self.precision = precision
         self._compile = _compile
+        self.cache_llama=cache_llama
 
         self.vision_model_vmfb_path = vision_model_vmfb_path
         self.qformer_vmfb_path = qformer_vmfb_path
         self.first_llama_vmfb_path = None
         self.second_llama_vmfb_path = None
+
+        self.vision_model_ir_path = None
+        self.qformer_ir_path = None
+        self.first_llama_ir_path = None
+        self.second_llama_ir_path = None
 
         print("Initializing Chat")
         config = OmegaConf.load(
@@ -643,6 +660,8 @@ class MiniGPT4(SharkLLMBase):
 
         self.first_llama = None
         self.second_llama = None
+        # self.first_llama = self.compile_first_llama(1700)
+        # self.second_llama = self.compile_second_llama(1700)
 
     def download_dependencies(self):
         pretrained_file = "prerained_minigpt4_7b.pth"
@@ -693,40 +712,57 @@ class MiniGPT4(SharkLLMBase):
         extended_model_name = (
             f"vision_model_{vision_model_precision}_{self.device}"
         )
+
+        self.vision_model_ir_path = Path(f"vision_model_{vision_model_precision}.mlir")
+
         print(f"Going to compile {extended_model_name}")
+        if not self.vision_model_ir_path.exists()
+            print(
+                f"Looking into gs://shark_tank/{self.model_name}/{self.vision_model_ir_path.name}"
+            )
+            download_public_file(
+                f"Looking into gs://shark_tank/{self.model_name}/{self.vision_model_ir_path.name}",
+                self.vision_model_ir_path.absolute(),
+                single_file=True,
+            )
+            if self.vision_model_ir_path.exists():
+                print(f"[DEBUG] mlir found at {self.vision_model_ir_path.absolute()}")
+                with open(self.vision_model_ir_path, "rb") as f:
+                    vision_module = f.read()
+                mlir_generated = True
         # Inputs for VisionModel.
         inputs = [torch.randint(3, (1, 3, 224, 224), dtype=torch.float32)]
         is_f16 = False
         if vision_model_precision == "fp16":
             is_f16 = True
-        if self.precision in ["int4", "int8"]:
-            shark_visionModel, _ = shark_compile_through_fx_int(
-                visionModel,
-                inputs,
-                extended_model_name=extended_model_name,
-                precision=vision_model_precision,
-                f16_input_mask=None,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
-            )
-        else:
-            shark_visionModel, _ = shark_compile_through_fx(
-                visionModel,
-                inputs,
-                extended_model_name=extended_model_name,
-                precision=vision_model_precision,
-                f16_input_mask=None,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
-            )
+        # if self.precision in ["int4", "int8"]:
+        #     shark_visionModel, _ = shark_compile_through_fx_int(
+        #         visionModel,
+        #         inputs,
+        #         extended_model_name=extended_model_name,
+        #         precision=vision_model_precision,
+        #         f16_input_mask=None,
+        #         save_dir=tempfile.gettempdir(),
+        #         debug=False,
+        #         generate_or_load_vmfb=True,
+        #         extra_args=[],
+        #         device=self.device,
+        #         mlir_dialect="tm_tensor",
+        #     )
+        # else:
+        shark_visionModel, _ = shark_compile_through_fx(
+            visionModel,
+            inputs,
+            extended_model_name=extended_model_name,
+            precision=vision_model_precision,
+            f16_input_mask=None,
+            save_dir=tempfile.gettempdir(),
+            debug=False,
+            generate_or_load_vmfb=True,
+            extra_args=[],
+            device=self.device,
+            mlir_dialect="tm_tensor",
+        )
         print(f"Generated {extended_model_name}.vmfb")
         return shark_visionModel
 
@@ -806,47 +842,135 @@ class MiniGPT4(SharkLLMBase):
             f"first_llama_{self.precision}_{self.device}_{padding}"
         )
         print(f"Going to compile {extended_model_name}")
-        # Inputs for FirstLlama.
-        inputs_embeds = torch.ones((1, padding, 4096), dtype=torch.float32)
-        position_ids = torch.ones((1, padding), dtype=torch.int64)
-        attention_mask = torch.ones((1, padding), dtype=torch.int32)
-        inputs = [inputs_embeds, position_ids, attention_mask]
-        is_f16 = False
-        f16_input_mask = []
-        if self.precision == "fp16":
-            is_f16 = True
-            f16_input_mask = [True, False, False]
-        if self.precision in ["int4", "int8"]:
-            shark_firstLlamaModel, _ = shark_compile_through_fx_int(
+        if not self.vicuna_mlir_path.exists()
+            print(
+                f"Looking into gs://shark_tank/{self.model_name}/{self.vicuna_mlir_path.name}"
+            )
+            # Inputs for FirstLlama.
+            inputs_embeds = torch.ones((1, padding, 4096), dtype=torch.float32)
+            position_ids = torch.ones((1, padding), dtype=torch.int64)
+            attention_mask = torch.ones((1, padding), dtype=torch.int32)
+            firstVicunaCompileInput = [inputs_embeds, position_ids, attention_mask]
+            is_f16 = False
+            f16_input_mask = []
+            print(f"[DEBUG] generating torchscript graph")
+            is_f16 = self.precision in ["fp16", "int4"]
+            if is_f16:
+                f16_input_mask = [True, False, False]
+            ts_graph = import_with_fx(
                 firstLlamaModel,
-                inputs,
-                extended_model_name=extended_model_name,
+                firstVicunaCompileInput,
+                is_f16=is_f16,
                 precision=self.precision,
                 f16_input_mask=f16_input_mask,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
+                mlir_type="torchscript",
             )
-        else:
-            shark_firstLlamaModel, _ = shark_compile_through_fx(
-                firstLlamaModel,
-                inputs,
-                extended_model_name=extended_model_name,
-                precision=self.precision,
-                f16_input_mask=f16_input_mask,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
+            del firstLlamaModel
+            # firstVicunaCompileInput = list(firstVicunaCompileInput)
+            # firstVicunaCompileInput[
+            #     0
+            # ] = torch_mlir.TensorPlaceholder.like(
+            #     firstVicunaCompileInput[0], dynamic_axes=[1]
+            # )
+
+            # firstVicunaCompileInput = tuple(firstVicunaCompileInput)
+            first_module = None
+            print(f"[DEBUG] generating torch mlir")
+            if self.precision in ["int4", "int8"]:
+                first_module = torch_mlir.compile(
+                    ts_graph,
+                    [*firstVicunaCompileInput],
+                    output_type=torch_mlir.OutputType.TORCH,
+                    backend_legal_ops=["quant.matmul_rhs_group_quant"],
+                    extra_library=quant_matmul_rhs_group_quant_library,
+                    use_tracing=False,
+                    verbose=False,
+                )
+                if self.cache_llama:
+                    print("Cache llama is ON")
+                    print("Will write TORCH IR")
+                    from contextlib import redirect_stdout
+                    with open(extended_model_name+"_torch.mlir", "w") as f:
+                        with redirect_stdout(f):
+                            print(first_module.operation.get_asm())
+                    print("Finished writing TORCH IR")
+                print(f"[DEBUG] converting torch to linalg")
+                run_pipeline_with_repro_report(
+                    first_module,
+                    "builtin.module(func.func(torch-unpack-quant-tensor),func.func(torch-convert-custom-quant-op),torch-backend-to-linalg-on-tensors-backend-pipeline)",
+                    description="Lowering Torch Backend IR -> Linalg-on-Tensors Backend IR",
+                )
+            else:
+                first_module = torch_mlir.compile(
+                    ts_graph,
+                    [*firstVicunaCompileInput],
+                    torch_mlir.OutputType.LINALG_ON_TENSORS,
+                    use_tracing=False,
+                    verbose=False,
+                )
+            del ts_graph
+            del firstVicunaCompileInput
+            gc.collect()
+
+            print(
+                "[DEBUG] successfully generated first vicuna linalg mlir"
             )
-        print(f"Generated {extended_model_name}.vmfb")
-        self.first_llama = shark_firstLlamaModel
-        return shark_firstLlamaModel
+            first_module = str(first_module)
+            if self.cache_llama:
+                print("Going to write the IR to a file now")
+                with open(extended_model_name+".mlir", "w") as f:
+                    f.write(first_module)
+                print("Finished writing IR")
+        
+        shark_module = SharkInference(
+            mlir_module=first_module,
+            device=self.device,
+            mlir_dialect="tm_tensor",
+        )
+        path = shark_module.save_module(
+            self.first_llama_vmfb_path.parent.absolute(),
+            self.first_llama_vmfb_path.stem,
+            extra_args=[
+                "--iree-vm-target-truncate-unsupported-floats",
+                "--iree-codegen-check-ir-before-llvm-conversion=false",
+                "--iree-vm-bytecode-module-output-format=flatbuffer-binary",
+            ],
+        )
+        print("Saved first llama vmfb at ", str(path))
+        shark_module.load_module(path)
+        self.first_llama = shark_module
+
+        # if self.precision in ["int4", "int8"]:
+        #     shark_firstLlamaModel, _ = shark_compile_through_fx_int(
+        #         firstLlamaModel,
+        #         inputs,
+        #         extended_model_name=extended_model_name,
+        #         precision=self.precision,
+        #         f16_input_mask=f16_input_mask,
+        #         save_dir=tempfile.gettempdir(),
+        #         debug=False,
+        #         generate_or_load_vmfb=True,
+        #         extra_args=[],
+        #         device=self.device,
+        #         mlir_dialect="tm_tensor",
+        #     )
+        # else:
+        #     shark_firstLlamaModel, _ = shark_compile_through_fx(
+        #         firstLlamaModel,
+        #         inputs,
+        #         extended_model_name=extended_model_name,
+        #         precision=self.precision,
+        #         f16_input_mask=f16_input_mask,
+        #         save_dir=tempfile.gettempdir(),
+        #         debug=False,
+        #         generate_or_load_vmfb=True,
+        #         extra_args=[],
+        #         device=self.device,
+        #         mlir_dialect="tm_tensor",
+        #     )
+        # print(f"Generated {extended_model_name}.vmfb")
+        # self.first_llama = shark_firstLlamaModel
+        return self.first_llama
 
     def compile_second_llama(self, padding):
         self.second_llama_vmfb_path = Path(
@@ -888,46 +1012,120 @@ class MiniGPT4(SharkLLMBase):
             past_key_value.append(
                 torch.zeros(1, 32, padding, 128, dtype=torch.float32)
             )
-        inputs = [input_ids, position_ids, attention_mask, *past_key_value]
+        secondVicunaCompileInput = [input_ids, position_ids, attention_mask, *past_key_value]
         is_f16 = False
         f16_input_mask = []
-        if self.precision == "fp16":
-            is_f16 = True
+        is_f16 = self.precision in ["fp16", "int4"]
+        if is_f16:
             f16_input_mask = [False, False, False]
             for i in past_key_value:
                 f16_input_mask.append(True)
 
+        ts_graph = import_with_fx(
+            secondLlamaModel,
+            secondVicunaCompileInput,
+            is_f16=is_f16,
+            precision=self.precision,
+            f16_input_mask=f16_input_mask,
+            mlir_type="torchscript",
+        )
+        del secondLlamaModel
+        # firstVicunaCompileInput = list(firstVicunaCompileInput)
+        # firstVicunaCompileInput[
+        #     0
+        # ] = torch_mlir.TensorPlaceholder.like(
+        #     firstVicunaCompileInput[0], dynamic_axes=[1]
+        # )
+
+        # firstVicunaCompileInput = tuple(firstVicunaCompileInput)
+        second_module = None
+        print(f"[DEBUG] generating torch mlir")
         if self.precision in ["int4", "int8"]:
-            shark_secondLlamaModel, _ = shark_compile_through_fx_int(
-                secondLlamaModel,
-                inputs,
-                extended_model_name=extended_model_name,
-                precision=self.precision,
-                f16_input_mask=f16_input_mask,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
+            second_module = torch_mlir.compile(
+                ts_graph,
+                [*secondVicunaCompileInput],
+                output_type=torch_mlir.OutputType.TORCH,
+                backend_legal_ops=["quant.matmul_rhs_group_quant"],
+                extra_library=quant_matmul_rhs_group_quant_library,
+                use_tracing=False,
+                verbose=False,
+            )
+            print(f"[DEBUG] converting torch to linalg")
+            run_pipeline_with_repro_report(
+                second_module,
+                "builtin.module(func.func(torch-unpack-quant-tensor),func.func(torch-convert-custom-quant-op),torch-backend-to-linalg-on-tensors-backend-pipeline)",
+                description="Lowering Torch Backend IR -> Linalg-on-Tensors Backend IR",
             )
         else:
-            shark_secondLlamaModel, _ = shark_compile_through_fx(
-                secondLlamaModel,
-                inputs,
-                extended_model_name=extended_model_name,
-                precision=self.precision,
-                f16_input_mask=f16_input_mask,
-                save_dir=tempfile.gettempdir(),
-                debug=False,
-                generate_or_load_vmfb=True,
-                extra_args=[],
-                device=self.device,
-                mlir_dialect="tm_tensor",
+            second_module = torch_mlir.compile(
+                ts_graph,
+                [*secondVicunaCompileInput],
+                torch_mlir.OutputType.LINALG_ON_TENSORS,
+                use_tracing=False,
+                verbose=False,
             )
-        print(f"Generated {extended_model_name}.vmfb")
-        self.second_llama = shark_secondLlamaModel
-        return shark_secondLlamaModel
+        del ts_graph
+        del secondVicunaCompileInput
+        gc.collect()
+
+        print(
+            "[DEBUG] successfully generated second vicuna linalg mlir"
+        )
+        second_module = str(second_module)
+        if self.cache_llama:
+            with open(extended_model_name+".mlir", "w+") as f:
+                f.write(second_module)
+            print("Finished writing IR")
+        
+        shark_module = SharkInference(
+            mlir_module=second_module,
+            device=self.device,
+            mlir_dialect="tm_tensor",
+        )
+        path = shark_module.save_module(
+            self.second_llama_vmfb_path.parent.absolute(),
+            self.second_llama_vmfb_path.stem,
+            extra_args=[
+                "--iree-vm-target-truncate-unsupported-floats",
+                "--iree-codegen-check-ir-before-llvm-conversion=false",
+                "--iree-vm-bytecode-module-output-format=flatbuffer-binary",
+            ],
+        )
+        print("Saved second llama vmfb at ", str(path))
+        shark_module.load_module(path)
+        self.second_llama = shark_module
+
+        # if self.precision in ["int4", "int8"]:
+        #     shark_secondLlamaModel, _ = shark_compile_through_fx_int(
+        #         secondLlamaModel,
+        #         inputs,
+        #         extended_model_name=extended_model_name,
+        #         precision=self.precision,
+        #         f16_input_mask=f16_input_mask,
+        #         save_dir=tempfile.gettempdir(),
+        #         debug=False,
+        #         generate_or_load_vmfb=True,
+        #         extra_args=[],
+        #         device=self.device,
+        #         mlir_dialect="tm_tensor",
+        #     )
+        # else:
+        #     shark_secondLlamaModel, _ = shark_compile_through_fx(
+        #         secondLlamaModel,
+        #         inputs,
+        #         extended_model_name=extended_model_name,
+        #         precision=self.precision,
+        #         f16_input_mask=f16_input_mask,
+        #         save_dir=tempfile.gettempdir(),
+        #         debug=False,
+        #         generate_or_load_vmfb=True,
+        #         extra_args=[],
+        #         device=self.device,
+        #         mlir_dialect="tm_tensor",
+        #     )
+        # print(f"Generated {extended_model_name}.vmfb")
+        # self.second_llama = shark_secondLlamaModel
+        return self.second_llama
 
     # Not yet sure why to use this.
     def compile(self):
@@ -1414,6 +1612,7 @@ if __name__ == "__main__":
         _compile=_compile,
         vision_model_vmfb_path=vision_model_vmfb_path,
         qformer_vmfb_path=qformer_vmfb_path,
+        cache_llama=args.cache_llama,
     )
 
     chat_state = CONV_VISION.copy()
