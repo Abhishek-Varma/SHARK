@@ -1,9 +1,8 @@
 import torch
-import transformers
 import time
 from apps.stable_diffusion.src import (
     args,
-    Text2ImagePipeline,
+    Text2ImageSDXLPipeline,
     get_schedulers,
     set_init_device_flags,
     utils,
@@ -16,13 +15,20 @@ def main():
     if args.clear_all:
         clear_all()
 
+    # TODO: prompt_embeds and text_embeds form base_model.json requires fixing
+    if args.precision != "fp16":
+    args.precision = "fp16"
+    args.height = 1024
+    args.width = 1024
+    args.max_length = 77
+    print("Using default supported configuration for SDXL : fp16, 1024x1024 and max_length=77")
     dtype = torch.float32 if args.precision == "fp32" else torch.half
     cpu_scheduling = not args.scheduler.startswith("Shark")
     set_init_device_flags()
     schedulers = get_schedulers(args.hf_model_id)
     scheduler_obj = schedulers[args.scheduler]
     seed = args.seed
-    txt2img_obj = Text2ImagePipeline.from_pretrained(
+    txt2img_obj = Text2ImageSDXLPipeline.from_pretrained(
         scheduler=scheduler_obj,
         import_mlir=args.import_mlir,
         model_id=args.hf_model_id,

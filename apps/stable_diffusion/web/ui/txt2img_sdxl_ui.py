@@ -18,7 +18,7 @@ from apps.stable_diffusion.web.utils.metadata import import_png_metadata
 from apps.stable_diffusion.web.utils.common_label_calc import status_label
 from apps.stable_diffusion.src import (
     args,
-    Text2ImagePipeline,
+    Text2ImageSDXLPipeline,
     get_schedulers,
     set_init_device_flags,
     utils,
@@ -38,7 +38,7 @@ init_use_tuned = args.use_tuned
 init_import_mlir = args.import_mlir
 
 
-def txt2img_inf(
+def txt2img_sdxl_inf(
     prompt: str,
     negative_prompt: str,
     height: int,
@@ -50,22 +50,17 @@ def txt2img_inf(
     batch_size: int,
     scheduler: str,
     model_id: str,
-    custom_vae: str,
     precision: str,
     device: str,
     max_length: int,
     save_metadata_to_json: bool,
     save_metadata_to_png: bool,
-    lora_weights: str,
-    lora_hf_id: str,
     ondemand: bool,
     repeatable_seeds: bool,
-    use_hiresfix: bool,
-    hiresfix_height: int,
-    hiresfix_width: int,
-    hiresfix_strength: float,
-    resample_type: str,
 ):
+    if precision != "fp16":
+        print("currently we support fp16 for SDXL")
+        precision = "fp16"
     from apps.stable_diffusion.web.ui.utils import (
         get_custom_model_pathfile,
         get_custom_vae_or_lora_weights,
@@ -98,20 +93,18 @@ def txt2img_inf(
     else:
         args.hf_model_id = model_id
 
-    if custom_vae != "None":
-        args.custom_vae = get_custom_model_pathfile(custom_vae, model="vae")
+    # if custom_vae != "None":
+    #     args.custom_vae = get_custom_model_pathfile(custom_vae, model="vae")
 
     args.save_metadata_to_json = save_metadata_to_json
     args.write_metadata_to_png = save_metadata_to_png
 
-    args.use_lora = get_custom_vae_or_lora_weights(
-        lora_weights, lora_hf_id, "lora"
-    )
+    args.use_lora = ""
 
     dtype = torch.float32 if precision == "fp32" else torch.half
     cpu_scheduling = not scheduler.startswith("Shark")
     new_config_obj = Config(
-        "txt2img",
+        "txt2img_sdxl",
         args.hf_model_id,
         args.ckpt_loc,
         args.custom_vae,
@@ -137,11 +130,6 @@ def txt2img_inf(
         args.max_length = max_length
         args.height = height
         args.width = width
-        args.use_hiresfix = use_hiresfix
-        args.hiresfix_height = hiresfix_height
-        args.hiresfix_width = hiresfix_width
-        args.hiresfix_strength = hiresfix_strength
-        args.resample_type = resample_type
         args.device = device.split("=>", 1)[1].strip()
         args.iree_vulkan_target_triple = init_iree_vulkan_target_triple
         args.iree_metal_target_platform = init_iree_metal_target_platform
@@ -152,30 +140,33 @@ def txt2img_inf(
         model_id = (
             args.hf_model_id
             if args.hf_model_id
-            else "stabilityai/stable-diffusion-2-1-base"
+            else "stabilityai/stable-diffusion-xl-base-1.0"
         )
         global_obj.set_schedulers(get_schedulers(model_id))
         scheduler_obj = global_obj.get_scheduler(scheduler)
-        global_obj.set_sd_obj(
-            Text2ImagePipeline.from_pretrained(
-                scheduler=scheduler_obj,
-                import_mlir=args.import_mlir,
-                model_id=args.hf_model_id,
-                ckpt_loc=args.ckpt_loc,
-                precision=args.precision,
-                max_length=args.max_length,
-                batch_size=args.batch_size,
-                height=args.height,
-                width=args.width,
-                use_base_vae=args.use_base_vae,
-                use_tuned=args.use_tuned,
-                custom_vae=args.custom_vae,
-                low_cpu_mem_usage=args.low_cpu_mem_usage,
-                debug=args.import_debug if args.import_mlir else False,
-                use_lora=args.use_lora,
-                ondemand=args.ondemand,
-            )
+        # For SDXL we set max_length as 77.
+        print("Setting max_length = 77")
+        max_length = 77
+        txt2img_sdxl_obj = Text2ImageSDXLPipeline.from_pretrained(
+            scheduler=scheduler_obj,
+            import_mlir=args.import_mlir,
+            model_id=args.hf_model_id,
+            ckpt_loc=args.ckpt_loc,
+            precision=precision,
+            max_length=max_length,
+            batch_size=batch_size,
+            height=height,
+            width=width,
+            use_base_vae=args.use_base_vae,
+            use_tuned=args.use_tuned,
+            custom_vae=args.custom_vae,
+            low_cpu_mem_usage=args.low_cpu_mem_usage,
+            debug=args.import_debug if args.import_mlir else False,
+            use_lora=args.use_lora,
+            use_quantize=args.use_quantize,
+            ondemand=args.ondemand,
         )
+        global_obj.set_sd_obj(txt2img_sdxl_obj)
 
     global_obj.set_sd_scheduler(scheduler)
 
@@ -204,81 +195,7 @@ def txt2img_inf(
             cpu_scheduling,
             args.max_embeddings_multiples,
         )
-        # TODO: allow user to save original image
-        # TODO: add option to let user keep both pipelines loaded, and unload
-        #  either at will
-        # TODO: add custom step value slider
-        # TODO: add option to use secondary model for the img2img pass
-        if use_hiresfix is True:
-            new_config_obj = Config(
-                "img2img",
-                args.hf_model_id,
-                args.ckpt_loc,
-                args.custom_vae,
-                precision,
-                1,
-                max_length,
-                height,
-                width,
-                device,
-                use_lora=args.use_lora,
-                use_stencil="None",
-                ondemand=ondemand,
-            )
-
-            global_obj.clear_cache()
-            global_obj.set_cfg_obj(new_config_obj)
-            set_init_device_flags()
-            model_id = (
-                args.hf_model_id
-                if args.hf_model_id
-                else "stabilityai/stable-diffusion-2-1-base"
-            )
-            global_obj.set_schedulers(get_schedulers(model_id))
-            scheduler_obj = global_obj.get_scheduler(args.scheduler)
-
-            global_obj.set_sd_obj(
-                Image2ImagePipeline.from_pretrained(
-                    scheduler_obj,
-                    args.import_mlir,
-                    args.hf_model_id,
-                    args.ckpt_loc,
-                    args.custom_vae,
-                    args.precision,
-                    args.max_length,
-                    1,
-                    hiresfix_height,
-                    hiresfix_width,
-                    args.use_base_vae,
-                    args.use_tuned,
-                    low_cpu_mem_usage=args.low_cpu_mem_usage,
-                    debug=args.import_debug if args.import_mlir else False,
-                    use_lora=args.use_lora,
-                    ondemand=args.ondemand,
-                )
-            )
-
-            global_obj.set_sd_scheduler(args.scheduler)
-
-            out_imgs = global_obj.get_sd_obj().generate_images(
-                prompt,
-                negative_prompt,
-                out_imgs[0],
-                batch_size,
-                hiresfix_height,
-                hiresfix_width,
-                ceil(steps / hiresfix_strength),
-                hiresfix_strength,
-                guidance_scale,
-                seeds[current_batch],
-                args.max_length,
-                dtype,
-                args.use_base_vae,
-                cpu_scheduling,
-                args.max_embeddings_multiples,
-                use_stencil="None",
-                resample_type=resample_type,
-            )
+        
         total_time = time.time() - start_time
         text_output = get_generation_text_info(
             seeds[: current_batch + 1], device
@@ -292,13 +209,13 @@ def txt2img_inf(
             save_output_img(out_imgs[0], seeds[current_batch])
             generated_imgs.extend(out_imgs)
             yield generated_imgs, text_output, status_label(
-                "Text-to-Image", current_batch + 1, batch_count, batch_size
+                "Text-to-Image-SDXL", current_batch + 1, batch_count, batch_size
             )
 
     return generated_imgs, text_output, ""
 
 
-with gr.Blocks(title="Text-to-Image") as txt2img_web:
+with gr.Blocks(title="Text-to-Image-SDXL") as txt2img_sdxl_web:
     with gr.Row(elem_id="ui_title"):
         nod_logo = Image.open(nodlogo_loc)
         with gr.Row():
@@ -318,43 +235,17 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                     with gr.Column(scale=10):
                         with gr.Row():
                             t2i_model_info = f"Custom Model Path: {str(get_custom_model_path())}"
-                            txt2img_custom_model = gr.Dropdown(
+                            txt2img_sdxl_custom_model = gr.Dropdown(
                                 label=f"Models",
                                 info="Select, or enter HuggingFace Model ID or Civitai model download URL",
                                 elem_id="custom_model",
                                 value=os.path.basename(args.ckpt_loc)
                                 if args.ckpt_loc
-                                else "stabilityai/stable-diffusion-2-1-base",
-                                choices=get_custom_model_files()
-                                + predefined_models,
+                                else "stabilityai/stable-diffusion-xl-base-1.0",
+                                choices=["stabilityai/stable-diffusion-xl-base-1.0"],
                                 allow_custom_value=True,
                                 scale=2,
                             )
-                            # janky fix for overflowing text
-                            t2i_vae_info = (
-                                str(get_custom_model_path("vae"))
-                            ).replace("\\", "\n\\")
-                            t2i_vae_info = f"VAE Path: {t2i_vae_info}"
-                            custom_vae = gr.Dropdown(
-                                label=f"VAE Models",
-                                info=t2i_vae_info,
-                                elem_id="custom_model",
-                                value=os.path.basename(args.custom_vae)
-                                if args.custom_vae
-                                else "None",
-                                choices=["None"]
-                                + get_custom_model_files("vae"),
-                                allow_custom_value=True,
-                                scale=1,
-                            )
-                    with gr.Column(scale=1, min_width=170):
-                        txt2img_png_info_img = gr.Image(
-                            label="Import PNG info",
-                            elem_id="txt2img_prompt_image",
-                            type="pil",
-                            tool="None",
-                            visible=True,
-                        )
 
                 with gr.Group(elem_id="prompt_box_outer"):
                     prompt = gr.Textbox(
@@ -369,31 +260,7 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                         lines=2,
                         elem_id="negative_prompt_box",
                     )
-                with gr.Accordion(label="LoRA Options", open=False):
-                    with gr.Row():
-                        # janky fix for overflowing text
-                        t2i_lora_info = (
-                            str(get_custom_model_path("lora"))
-                        ).replace("\\", "\n\\")
-                        t2i_lora_info = f"LoRA Path: {t2i_lora_info}"
-                        lora_weights = gr.Dropdown(
-                            label=f"Standalone LoRA Weights",
-                            info=t2i_lora_info,
-                            elem_id="lora_weights",
-                            value="None",
-                            choices=["None"] + get_custom_model_files("lora"),
-                            allow_custom_value=True,
-                        )
-                        lora_hf_id = gr.Textbox(
-                            elem_id="lora_hf_id",
-                            placeholder="Select 'None' in the Standalone LoRA "
-                            "weights dropdown on the left if you want to use "
-                            "a standalone HuggingFace model ID for LoRA here "
-                            "e.g: sayakpaul/sd-model-finetuned-lora-t4",
-                            value="",
-                            label="HuggingFace Model ID",
-                            lines=3,
-                        )
+                
                 with gr.Accordion(label="Advanced Options", open=False):
                     with gr.Row():
                         scheduler = gr.Dropdown(
@@ -416,22 +283,22 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                             )
                     with gr.Row():
                         height = gr.Slider(
-                            384,
-                            768,
-                            value=args.height,
+                            1024,
+                            value=1024,
                             step=8,
                             label="Height",
+                            visible=False,
                         )
                         width = gr.Slider(
-                            384,
-                            768,
-                            value=args.width,
+                            1024,
+                            value=1024,
                             step=8,
                             label="Width",
+                            visible=False,
                         )
                         precision = gr.Radio(
                             label="Precision",
-                            value=args.precision,
+                            value="fp16",
                             choices=[
                                 "fp16",
                                 "fp32",
@@ -464,50 +331,6 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                             value=args.ondemand,
                             label="Low VRAM",
                             interactive=True,
-                        )
-                    with gr.Group():
-                        with gr.Row():
-                            use_hiresfix = gr.Checkbox(
-                                value=args.use_hiresfix,
-                                label="Use Hires Fix",
-                                interactive=True,
-                            )
-                            resample_type = gr.Dropdown(
-                                value=args.resample_type,
-                                choices=[
-                                    "Lanczos",
-                                    "Nearest Neighbor",
-                                    "Bilinear",
-                                    "Bicubic",
-                                    "Adaptive",
-                                    "Antialias",
-                                    "Box",
-                                    "Affine",
-                                    "Cubic",
-                                ],
-                                label="Resample Type",
-                                allow_custom_value=True,
-                            )
-                        hiresfix_height = gr.Slider(
-                            384,
-                            768,
-                            value=args.hiresfix_height,
-                            step=8,
-                            label="Hires Fix Height",
-                        )
-                        hiresfix_width = gr.Slider(
-                            384,
-                            768,
-                            value=args.hiresfix_width,
-                            step=8,
-                            label="Hires Fix Width",
-                        )
-                        hiresfix_strength = gr.Slider(
-                            0,
-                            1,
-                            value=args.hiresfix_strength,
-                            step=0.01,
-                            label="Hires Fix Denoising Strength",
                         )
                     with gr.Row():
                         with gr.Column(scale=3):
@@ -555,7 +378,7 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
 
             with gr.Column(scale=1, min_width=600):
                 with gr.Group():
-                    txt2img_gallery = gr.Gallery(
+                    txt2img_sdxl_gallery = gr.Gallery(
                         label="Generated images",
                         show_label=False,
                         elem_id="gallery",
@@ -570,7 +393,7 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                         elem_id="std_output",
                         show_label=False,
                     )
-                    txt2img_status = gr.Textbox(visible=False)
+                    txt2img_sdxl_status = gr.Textbox(visible=False)
                 with gr.Row():
                     stable_diffusion = gr.Button("Generate Image(s)")
                     random_seed = gr.Button("Randomize Seed")
@@ -583,18 +406,9 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                     stop_batch = gr.Button("Stop Batch")
                 with gr.Row():
                     blank_thing_for_row = None
-                with gr.Row():
-                    txt2img_sendto_img2img = gr.Button(value="SendTo Img2Img")
-                    txt2img_sendto_inpaint = gr.Button(value="SendTo Inpaint")
-                    txt2img_sendto_outpaint = gr.Button(
-                        value="SendTo Outpaint"
-                    )
-                    txt2img_sendto_upscaler = gr.Button(
-                        value="SendTo Upscaler"
-                    )
 
         kwargs = dict(
-            fn=txt2img_inf,
+            fn=txt2img_sdxl_inf,
             inputs=[
                 prompt,
                 negative_prompt,
@@ -606,31 +420,23 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
                 batch_count,
                 batch_size,
                 scheduler,
-                txt2img_custom_model,
-                custom_vae,
+                txt2img_sdxl_custom_model,
                 precision,
                 device,
                 max_length,
                 save_metadata_to_json,
                 save_metadata_to_png,
-                lora_weights,
-                lora_hf_id,
                 ondemand,
                 repeatable_seeds,
-                use_hiresfix,
-                hiresfix_height,
-                hiresfix_width,
-                hiresfix_strength,
-                resample_type,
             ],
-            outputs=[txt2img_gallery, std_output, txt2img_status],
+            outputs=[txt2img_sdxl_gallery, std_output, txt2img_sdxl_status],
             show_progress="minimal" if args.progress_bar else "none",
         )
 
         status_kwargs = dict(
-            fn=lambda bc, bs: status_label("Text-to-Image", 0, bc, bs),
+            fn=lambda bc, bs: status_label("Text-to-Image-SDXL", 0, bc, bs),
             inputs=[batch_count, batch_size],
-            outputs=txt2img_status,
+            outputs=txt2img_sdxl_status,
         )
 
         prompt_submit = prompt.submit(**status_kwargs).then(**kwargs)
@@ -641,38 +447,4 @@ with gr.Blocks(title="Text-to-Image") as txt2img_web:
         stop_batch.click(
             fn=cancel_sd,
             cancels=[prompt_submit, neg_prompt_submit, generate_click],
-        )
-
-        txt2img_png_info_img.change(
-            fn=import_png_metadata,
-            inputs=[
-                txt2img_png_info_img,
-                prompt,
-                negative_prompt,
-                steps,
-                scheduler,
-                guidance_scale,
-                seed,
-                width,
-                height,
-                txt2img_custom_model,
-                lora_weights,
-                lora_hf_id,
-                custom_vae,
-            ],
-            outputs=[
-                txt2img_png_info_img,
-                prompt,
-                negative_prompt,
-                steps,
-                scheduler,
-                guidance_scale,
-                seed,
-                width,
-                height,
-                txt2img_custom_model,
-                lora_weights,
-                lora_hf_id,
-                custom_vae,
-            ],
         )
